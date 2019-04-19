@@ -1,4 +1,4 @@
-#include <ifaddrs.h>
+//#include <ifaddrs.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <sys/socket.h>
@@ -6,6 +6,8 @@
 #include <netinet/in.h>
 #include <string.h>
 #include <arpa/inet.h>
+#include <iostream>
+#include <string.h>
 
 using namespace std;
 
@@ -16,7 +18,7 @@ int client(){
   int tempPort= 12345;
 
   struct sockaddr_in servAddr;
-  char *message = "client Message";
+  const char *message = "client Message";
   char buffer[1024];
 
   sock = socket(AF_INET, SOCK_STREAM, 0);
@@ -47,7 +49,7 @@ int server(){
     //arbitrary size - 1 kb was what we wanted to do per round so ¯\_(ツ)_/¯
     char buffer[1024];
 
-    char *message = "responseConfirm";
+    const char *message = "responseConfirm";
 
     //Creating socket file descriptor
     serverFd= socket(AF_INET, SOCK_STREAM, 0);
