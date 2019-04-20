@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <netinet/in.h>
 #include <string.h>
+#include <sys/types.h>
 #include <arpa/inet.h>
 #include <iostream>
 #include <string.h>
@@ -15,7 +16,9 @@ int client(){
 
   struct sockaddr_in address;
   int sock = 0, valRead;
-  int tempPort= 12345;
+  int tempPort = 12345;
+  fd_set readSet, writeSet;
+  struct timeVal
 
   struct sockaddr_in servAddr;
   const char *message = "client Message";
@@ -52,7 +55,7 @@ int server(){
     const char *message = "responseConfirm";
 
     //Creating socket file descriptor
-    serverFd= socket(AF_INET, SOCK_STREAM, 0);
+    serverFd = socket(AF_INET, SOCK_STREAM, 0);
     setsockopt(serverFd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt));
 
     address.sin_family = AF_INET;
