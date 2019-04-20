@@ -8,7 +8,6 @@
 #include <sys/types.h>
 #include <arpa/inet.h>
 #include <iostream>
-#include <string.h>
 
 using namespace std;
 
@@ -18,7 +17,7 @@ int client(){
   int sock = 0, valRead;
   int tempPort = 12345;
   fd_set readSet, writeSet;
-  struct timeVal
+  struct timeVal;
 
   struct sockaddr_in servAddr;
   const char *message = "client Message";
