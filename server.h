@@ -2,19 +2,19 @@
 # define SERVER_H
 
 void* start_server(void* arg);
-int server();
+int server(void);
 
 void* start_server(void* arg) {
-  //printf("START SERVER\n");
+  printf("START SERVER\n");
   server();
   pthread_exit(NULL);
 }
 
-int server() {
+int server(void) {
 
     int serverFd, newSocket, valRead;
     struct sockaddr_in address;
-    int tempPort = 12345;
+    int tempPort = 54321;
     int opt = 1;
     int addrlen = sizeof(address);
 
@@ -41,14 +41,15 @@ int server() {
     listen(serverFd, 3);
     printf("accepting and reading \n");
     newSocket = accept(serverFd, (struct sockaddr *)&address,(socklen_t*)&addrlen);
+    printf("new socket: %i\n", newSocket);
     valRead = read(newSocket, buffer, 1024);
+    printf("read\n");
 
     printf("%s\n",buffer );
 
     send(newSocket, message, strlen(message) , 0 );
     printf("message sent\n");
-    //return 0;
-    pthread_exit(NULL);
+    return 0;
 }
 
 # endif /* SERVER_H */

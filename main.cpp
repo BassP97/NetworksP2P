@@ -17,18 +17,22 @@ int main(int argc,char *argv[]) {
 
   pthread_t threads[2]; // 2 threads - one client, one server
   int rc;
+
   rc = pthread_create(&threads[0], NULL, start_client, NULL);
   if (rc)
   {
     perror("pthread_create");
     exit(-1);
   }
+
   rc = pthread_create(&threads[0], NULL, start_server, NULL);
   if (rc)
   {
     perror("pthread_create");
     exit(-1);
   }
+
   pthread_exit(NULL);
+  
   return 0;
 }
