@@ -1,6 +1,8 @@
 #ifndef CLIENT_H
 #define CLIENT_H
 
+#include "server.h"
+
 using namespace std;
 
 void* start_client (void* arg);
@@ -18,11 +20,14 @@ int client(void) {
   int sock = 0, valRead;
   int tempPort = 8080;
   fd_set readSet, writeSet;
+  string fileName;
   struct timeVal;
+  struct fileReturn* serverReturn;
 
   struct sockaddr_in servAddr;
-  //const char *message = "message from Hayley's computer";
-  char message[64];
+
+  //chaged message to 128 to match max file name
+  char* message;
   char buffer[1024];
   char addr[8];
 
@@ -30,7 +35,7 @@ int client(void) {
   // be something that lets the user specify what file they want
   // the specified host must be running an instance of this program for this to work
   printf("Type in the address to send a message to:\n");
-  cin >> addr;
+  std::cin >> addr;
 
   sock = socket(AF_INET, SOCK_STREAM, 0);
 
@@ -49,17 +54,33 @@ int client(void) {
     return -1;
   }
 
-  printf("Type in the message to send:\n");
-  cin >> message;
+  printf("Type in a filename to send\n");
+  cin >> fileName;
+  char* fileNameArr = new char[fileName.length()+1];
+  strcpy(fileNameArr, fileName.c_str());
 
-  int sent = send(sock, message, strlen(message), 0);
+  struct fileRequest* toRequest;
+  strcpy(toRequest->fileName, fileNameArr);
+  toRequest->portionToReturn = 0;
+
+  message = (char*)fileNameArr;
+
+  int sent = send(sock, message, sizeof(fileRequest), 0);
   if (sent == -1) {
     perror("send");
   }
+
+  valRead = read(sock, buffer, sizeof(fileReturn));
+  serverReturn = (struct fileReturn*)buffer;
+  fprintf(stderr, "%s\n", serverReturn->data);
+
+  if (valRead == -1){}
   //close(sock);
-  // valRead = read(sock, buffer, 1024);
-  // printf("%s\n",buffer );
+  valRead = read(sock, buffer, 1024);
+  printf("%s\n",buffer );
+  delete[] fileNameArr;
   return 0;
+
 }
 
 #endif /* CLIENT_H */

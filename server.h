@@ -1,17 +1,34 @@
 # ifndef SERVER_H
 # define SERVER_H
 
+#include <iomanip>
+#include <fstream>
+#include <string>
+
 # define PORT 8080 // the port that the server listens for new connections on
 
 fd_set readfds; // global set of file descriptors for the reading server thread to watch
 int readfd_count; // number of file descriptors in the set
 pthread_mutex_t readfd_lock; // lock for readfds since it's global and accessed by multiple threads
-vector<int> fd_list; // list of currently active file descriptors
+std::vector<int> fd_list; // list of currently active file descriptors
 
 void* start_server_listen(void* arg);
 void* start_server_read(void* arg);
 int server_listen(void);
 int server_read (void);
+
+struct fileRequest{
+  char fileName[128]; //name of the file we are requesting
+  long portionToReturn;//the portion of the file we want returned - an integer corresponding to the Nth kilobyte
+                       //has to be a long to work correctly with seekg in readFile
+}fileRequest;
+
+struct fileReturn{
+  char data[1024];      //actual data we are returning
+  char positionInFile;  //what position the data should be placed in
+  int bytesToUse;       //the number of bytes in the data that are "real" data - is typically 1024 unless a file
+                        //has less than 1024 bytes of data left to send.
+}fileReturn;
 
 void* start_server_listen(void* arg) {
   server_listen();
@@ -21,6 +38,40 @@ void* start_server_listen(void* arg) {
 void* start_server_read(void* arg) {
   server_read();
   pthread_exit(NULL);
+}
+
+char* readFile(struct fileRequest* toRetrieve){
+  std::string fileName = toRetrieve->fileName;
+  std::ifstream inFile;
+  char toSend[1024];
+  size_t startLocation;
+  struct fileReturn* toReturn;
+  toReturn = (struct fileReturn*)malloc(sizeof(struct fileReturn));
+
+
+  inFile.open("fileName");
+  if (!inFile) {
+      printf("Unable to open file");
+      exit(0);
+  }
+
+  //get the total file size and set the position to the byte we have to read
+  inFile.seekg(0, inFile.end);
+  size_t length = inFile.tellg();
+  inFile.seekg(toRetrieve->portionToReturn*1024);
+
+  //if there are less than 1024 bytes left in the file to read
+  if (length-(toRetrieve->portionToReturn*1024) > sizeof(toSend)){
+    length = sizeof(toSend);                              //we have a kilobyte to send, so send a full kilobyte
+  }else{
+    length = length-(toRetrieve->portionToReturn*1024);  //if not, just send the rest of the file
+  }
+
+  inFile.read(toSend, length);
+  memcpy(toReturn->data, toSend, startLocation);
+  toReturn->positionInFile = toRetrieve->portionToReturn;
+  toReturn->bytesToUse = length;
+  return((char*)toReturn);
 }
 
 int server_listen(void) {
@@ -152,18 +203,23 @@ int server_read (void) {
         if (FD_ISSET(fd_list[i], &readfds_copy) != 0) {
           printf("got data from fd %i\n", fd_list[i]);
           // some temporary code to read the message from the client
-          char buffer[1024];
-          memset(buffer, 0, 1024);
-          int valRead = read(fd_list[i], buffer, 1024);
-          if (valRead > 0)
-          {
+          size_t requestSize = sizeof(fileRequest);
+          char* buffer = new char[requestSize];
+          memset(buffer, 0, sizeof(fileRequest));
+          int valRead = read(fd_list[i], buffer, sizeof(fileRequest));
+          struct fileRequest* toAccept = (struct fileRequest*)buffer;
+
+          if (valRead > 0){
             printf("printing received message:\n");
-            printf("%s\n", buffer);
+            printf("fileName requested: %s and returning starting at block %ld\n", toAccept->fileName, toAccept->portionToReturn);
           }
           else
           {
+            free(buffer);
             perror("read");
           }
+          char* toReturn = readFile(toAccept);
+          free(buffer);
         }
       }
     }
