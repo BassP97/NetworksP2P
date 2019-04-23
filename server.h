@@ -5,6 +5,13 @@
 #include <fstream>
 #include <string>
 
+
+/*
+Paul's notes to self:
+Client needs a way to know when it is finished recieving data so it stops
+requesting - solution: server needs to return file size when it sends the first
+packet of the transmission - add a file size parameter to serverMessage
+*/
 typedef unsigned char *byte_pointer;
 
 # define PORT 8080 // the port that the server listens for new connections on
@@ -20,18 +27,19 @@ int server_listen(void);
 int server_read (void);
 int serverSend(char* toSend, int sendFD);
 
-struct fileRequest{
+struct clientMessage{
   char fileName[128]; //name of the file we are requesting
   long portionToReturn;//the portion of the file we want returned - an integer corresponding to the Nth kilobyte
                        //has to be a long to work correctly with seekg in readFile
-}fileRequest;
+}clientMessage;
 
-struct fileReturn{
+struct serverMessage{
   char data[1024];      //actual data we are returning
-  char positionInFile;  //what position the data should be placed in
+  long positionInFile;  //what position the data should be placed in
   int bytesToUse;       //the number of bytes in the data that are "real" data - is typically 1024 unless a file
                         //has less than 1024 bytes of data left to send.
-}fileReturn;
+  long fileSize;         //file size in bytes
+}serverMessage;
 
 void showBytes(byte_pointer start, size_t len){
   int i;
@@ -67,12 +75,13 @@ void* start_server_read(void* arg) {
   pthread_exit(NULL);
 }
 
-char* readFile(struct fileRequest* toRetrieve){
+char* readFile(struct clientMessage* toRetrieve){
   std::ifstream inFile;
   char toSend[1024];
   size_t startLocation;
-  struct fileReturn* toReturn;
-  toReturn = (struct fileReturn*)malloc(sizeof(struct fileReturn));
+  size_t length;
+  struct serverMessage* toReturn;
+  toReturn = (struct serverMessage*)malloc(sizeof(struct serverMessage));
 
   inFile.open(toRetrieve->fileName);
   if (!inFile) {
@@ -82,7 +91,7 @@ char* readFile(struct fileRequest* toRetrieve){
   printf("file successfully opened \n");
   //get the total file size and set the position to the byte we have to read
   inFile.seekg(0, inFile.end);
-  size_t length = inFile.tellg();
+  size_t size = inFile.tellg();
   inFile.seekg(toRetrieve->portionToReturn*1024);
 
   //if there are less than 1024 bytes left in the file to read
@@ -95,10 +104,11 @@ char* readFile(struct fileRequest* toRetrieve){
   inFile.read(toSend, length);
   printf("sending data: \n");
   showBytes((byte_pointer)toSend, (size_t)length);
-  printf("\n %lui \n", sizeof(toReturn->data)); 
+  printf("\n %lui \n", sizeof(toReturn->data));
   memcpy(toReturn->data, toSend, length);
   toReturn->positionInFile = toRetrieve->portionToReturn;
   toReturn->bytesToUse = length;
+  toReturn->fileSize = (long)size;
   return((char*)toReturn);
 }
 
@@ -256,15 +266,15 @@ int server_read (void) {
         if (FD_ISSET(fd_list[i], &readfds_copy) != 0) {
           printf("got data from fd %i\n", fd_list[i]);
           // some temporary code to read the message from the client
-          size_t requestSize = sizeof(fileRequest);
+          size_t requestSize = sizeof(clientMessage);
           char* buffer = new char[requestSize];
-          memset(buffer, 0, sizeof(fileRequest));
-          int valRead = read(fd_list[i], buffer, sizeof(fileRequest));
-          struct fileRequest* toAccept = (struct fileRequest*)buffer;
+          memset(buffer, 0, sizeof(clientMessage));
+          int valRead = read(fd_list[i], buffer, sizeof(clientMessage));
+          struct clientMessage* toAccept = (struct clientMessage*)buffer;
 	  printf("%s", buffer);
-          showBytes((byte_pointer)toAccept->fileName, sizeof(fileRequest));
+          showBytes((byte_pointer)toAccept->fileName, sizeof(clientMessage));
 	  printf("\n");
-	  showBytes((byte_pointer)buffer, sizeof(fileRequest));
+	  showBytes((byte_pointer)buffer, sizeof(clientMessage));
 	  if (valRead > 0){
             printf("printing received message:\n");
             printf("fileName requested: %s and returning starting at block %ld\n", toAccept->fileName, toAccept->portionToReturn);
@@ -276,7 +286,7 @@ int server_read (void) {
             perror("read");
           }
           char* toReturn = readFile(toAccept);
-          send(fd_list[i], toReturn, sizeof(fileReturn), 0);
+          send(fd_list[i], toReturn, sizeof(serverMessage), 0);
 	  free(buffer);
         }
       }

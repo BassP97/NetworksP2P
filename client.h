@@ -8,7 +8,7 @@ using namespace std;
 
 void* start_client (void* arg);
 int client(void);
-int writeToFile(struct fileReturn* toWrite, string fileName);
+int writeToFile(struct serverMessage* toWrite, string fileName);
 void showBytes(byte_pointer start, size_t len);
 
 /* -----------------------------------------------------------------------------
@@ -35,13 +35,13 @@ int client(void) {
   fd_set readSet, writeSet;
   string fileName;
   struct timeVal;
-  struct fileReturn* serverReturn;
+  struct serverMessage* serverReturn;
 
   struct sockaddr_in servAddr;
 
   //chaged message to 128 to match max file name
   char* message;
-  char rawBuffer[1024];
+  char rawBuffer[sizeof(serverMessage)];
   char addr[8];
 
   // lets the user specify the other host to connect to; will eventually
@@ -77,7 +77,7 @@ int client(void) {
   strcpy(fileNameArr, fileName.c_str());
 
   // create a request
-  struct fileRequest toRequest;
+  struct clientMessage toRequest;
   strcpy(toRequest.fileName, fileNameArr);
   toRequest.portionToReturn = 0;
 
@@ -85,28 +85,31 @@ int client(void) {
   printf("Requesting block number %ld\n",toRequest.portionToReturn);
 
   message = (char*)&toRequest;
-  showBytes((byte_pointer)message, sizeof(fileRequest));
+  showBytes((byte_pointer)message, sizeof(clientMessage));
   printf("\n");
-  showBytes((byte_pointer)&toRequest, sizeof(fileRequest));
+  showBytes((byte_pointer)&toRequest, sizeof(clientMessage));
 
   // send the request
-  int sent = send(sock, message, sizeof(fileRequest), 0);
+  int sent = send(sock, message, sizeof(clientMessage), 0);
   if (sent == -1) {
     perror("send");
   }
 
-  valRead = read(sock, rawBuffer, sizeof(fileReturn));
+  valRead = read(sock, rawBuffer, sizeof(serverMessage));
   if (valRead == -1){
     perror("read");
   }
 
-  serverReturn = (struct fileReturn*)rawBuffer;
+  serverReturn = (struct serverMessage*)rawBuffer;
   printf("Recieved data\n");
-  showBytes((byte_pointer)rawBuffer, (size_t)1024);
-  serverReturn = (struct fileReturn*)rawBuffer;
+  showBytes((byte_pointer)rawBuffer, sizeof(serverMessage));
+  serverReturn = (struct serverMessage*)rawBuffer;
 
-  printf("Data after processing:\n");
-  showBytes((byte_pointer)serverReturn->data, size_t(serverReturn->bytesToUse));
+  //printf("Data after processing:\n");
+  //showBytes((byte_pointer)serverReturn->data, size_t(serverReturn->bytesToUse));
+
+  printf("Data parameters \nFile size: %li \nPosition in file: %li\nBytes to use %i\n",
+  serverReturn->fileSize, serverReturn->positionInFile, serverReturn->bytesToUse);
 
   if(writeToFile(serverReturn, fileName)){
     printf("successfully wrote to %s\n", fileName.c_str());
@@ -120,7 +123,7 @@ int client(void) {
 
 }
 
-int writeToFile(struct fileReturn* toWrite, string fileName){
+int writeToFile(struct serverMessage* toWrite, string fileName){
   if(access( fileName.c_str(), F_OK ) == -1){
     ofstream writeFile(fileName, ios::out | ios::binary);
     if(writeFile.write(toWrite->data, toWrite->bytesToUse)){
