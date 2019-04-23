@@ -84,9 +84,7 @@ int client(void) {
   printf("Requesting file with name %s\n",toRequest.fileName);
   printf("Requesting block number %ld\n",toRequest.portionToReturn);
 
-  message = (char*)&fileNameArr;
-  //janky, janky solution - fix later?
-  message = message+41;
+  message = (char*)&toRequest;
   showBytes((byte_pointer)message, sizeof(fileRequest));
   printf("\n");
   showBytes((byte_pointer)&toRequest, sizeof(fileRequest));
