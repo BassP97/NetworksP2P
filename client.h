@@ -11,13 +11,6 @@ int client(void);
 int writeToFile(struct fileReturn* toWrite, string fileName);
 void showBytes(byte_pointer start, size_t len);
 
-void showBytes(byte_pointer start, size_t len) {
-  int i;
-  for (i = 0; i < len; i++)
-    fprintf(stderr, " %.2x", start[i]);
-  fprintf(stderr, "\n");
-}
-
 /* -----------------------------------------------------------------------------
  * void* start_client (void* arg)
  * Function for the client thread to start in. Calls client() where the client
