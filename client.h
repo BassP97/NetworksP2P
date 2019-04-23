@@ -2,11 +2,21 @@
 #define CLIENT_H
 
 #include "server.h"
+typedef unsigned char *byte_pointer;
 
 using namespace std;
 
 void* start_client (void* arg);
 int client(void);
+int writeToFile(struct fileReturn* toWrite, string fileName);
+void showBytes(byte_pointer start, size_t len);
+
+void showBytes(byte_pointer start, size_t len) {
+  int i;
+  for (i = 0; i < len; i++)
+    fprintf(stderr, " %.2x", start[i]);
+  fprintf(stderr, "\n");
+}
 
 /* -----------------------------------------------------------------------------
  * void* start_client (void* arg)
@@ -38,7 +48,7 @@ int client(void) {
 
   //chaged message to 128 to match max file name
   char* message;
-  char buffer[1024];
+  char rawBuffer[1024];
   char addr[8];
 
   // lets the user specify the other host to connect to; will eventually
@@ -46,6 +56,7 @@ int client(void) {
   // the specified host must be running an instance of this program for this to work
   printf("Type in the address to send a message to:\n");
   std::cin >> addr;
+  printf("trying to connect to %s\n",addr );
 
   sock = socket(AF_INET, SOCK_STREAM, 0);
 
@@ -63,6 +74,7 @@ int client(void) {
     perror("connect");
     return -1;
   }
+  printf("Successfully connected to %s\n",addr);
 
   // request a file from the server
   printf("Type in a filename to request from the server\n");
@@ -76,7 +88,15 @@ int client(void) {
   strcpy(toRequest.fileName, fileNameArr);
   toRequest.portionToReturn = 0;
 
+  printf("Requesting file with name %s\n",toRequest.fileName);
+  printf("Requesting block number %ld\n",toRequest.portionToReturn);
+
   message = (char*)&fileNameArr;
+  //janky, janky solution - fix later?
+  message = message+41;
+  showBytes((byte_pointer)message, sizeof(fileRequest));
+  printf("\n");
+  showBytes((byte_pointer)&toRequest, sizeof(fileRequest));
 
   // send the request
   int sent = send(sock, message, sizeof(fileRequest), 0);
@@ -84,17 +104,41 @@ int client(void) {
     perror("send");
   }
 
-  valRead = read(sock, buffer, sizeof(fileReturn));
-  serverReturn = (struct fileReturn*)buffer;
-  fprintf(stderr, "%s\n", serverReturn->data);
+  valRead = read(sock, rawBuffer, sizeof(fileReturn));
+  if (valRead == -1){
+    perror("read");
+  }
 
-  if (valRead == -1){}
-  //close(sock);
-  valRead = read(sock, buffer, 1024);
-  printf("%s\n",buffer );
+  serverReturn = (struct fileReturn*)rawBuffer;
+  printf("Recieved data\n");
+  showBytes((byte_pointer)rawBuffer, (size_t)1024);
+  serverReturn = (struct fileReturn*)rawBuffer;
+
+  printf("Data after processing:\n");
+  showBytes((byte_pointer)serverReturn->data, size_t(serverReturn->bytesToUse));
+
+  if(writeToFile(serverReturn, fileName)){
+    printf("successfully wrote to %s\n", fileName.c_str());
+  }else{
+    printf("failed to write to file\n");
+  }
+
+  close(sock);
   delete[] fileNameArr;
   return 0;
 
+}
+
+int writeToFile(struct fileReturn* toWrite, string fileName){
+  if(access( fileName.c_str(), F_OK ) == -1){
+    ofstream writeFile(fileName, ios::out | ios::binary);
+    if(writeFile.write(toWrite->data, toWrite->bytesToUse)){
+        return 1;
+    }else{
+      return -1;
+    }
+  }
+  return 1;
 }
 
 #endif /* CLIENT_H */
