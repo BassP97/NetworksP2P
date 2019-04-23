@@ -5,6 +5,8 @@
 #include <fstream>
 #include <string>
 
+typedef unsigned char *byte_pointer;
+
 # define PORT 8080 // the port that the server listens for new connections on
 
 fd_set readfds; // global set of file descriptors for the reading server thread to watch
@@ -16,6 +18,7 @@ void* start_server_listen(void* arg);
 void* start_server_read(void* arg);
 int server_listen(void);
 int server_read (void);
+int serverSend(char* toSend, int sendFD);
 
 struct fileRequest{
   char fileName[128]; //name of the file we are requesting
@@ -29,6 +32,13 @@ struct fileReturn{
   int bytesToUse;       //the number of bytes in the data that are "real" data - is typically 1024 unless a file
                         //has less than 1024 bytes of data left to send.
 }fileReturn;
+
+void showBytes(byte_pointer start, size_t len){
+  int i;
+  for (i=0; i<len; i++)
+    printf(" %.2x", start[i]);
+  printf("\n");
+}
 
 /* -----------------------------------------------------------------------------
  * void* start_server_listen (void* arg)
@@ -58,20 +68,18 @@ void* start_server_read(void* arg) {
 }
 
 char* readFile(struct fileRequest* toRetrieve){
-  std::string fileName = toRetrieve->fileName;
   std::ifstream inFile;
   char toSend[1024];
   size_t startLocation;
   struct fileReturn* toReturn;
   toReturn = (struct fileReturn*)malloc(sizeof(struct fileReturn));
 
-
-  inFile.open("fileName");
+  inFile.open(toRetrieve->fileName);
   if (!inFile) {
       printf("Unable to open file");
       exit(0);
   }
-
+  printf("file successfully opened \n");
   //get the total file size and set the position to the byte we have to read
   inFile.seekg(0, inFile.end);
   size_t length = inFile.tellg();
@@ -83,9 +91,12 @@ char* readFile(struct fileRequest* toRetrieve){
   }else{
     length = length-(toRetrieve->portionToReturn*1024);  //if not, just send the rest of the file
   }
-
+  printf("file length assigned \n");
   inFile.read(toSend, length);
-  memcpy(toReturn->data, toSend, startLocation);
+  printf("sending data: \n");
+  showBytes((byte_pointer)toSend, (size_t)length);
+  printf("\n %lui \n", sizeof(toReturn->data)); 
+  memcpy(toReturn->data, toSend, length);
   toReturn->positionInFile = toRetrieve->portionToReturn;
   toReturn->bytesToUse = length;
   return((char*)toReturn);
@@ -250,8 +261,11 @@ int server_read (void) {
           memset(buffer, 0, sizeof(fileRequest));
           int valRead = read(fd_list[i], buffer, sizeof(fileRequest));
           struct fileRequest* toAccept = (struct fileRequest*)buffer;
-
-          if (valRead > 0){
+	  printf("%s", buffer);
+          showBytes((byte_pointer)toAccept->fileName, sizeof(fileRequest));
+	  printf("\n");
+	  showBytes((byte_pointer)buffer, sizeof(fileRequest));
+	  if (valRead > 0){
             printf("printing received message:\n");
             printf("fileName requested: %s and returning starting at block %ld\n", toAccept->fileName, toAccept->portionToReturn);
           }
@@ -262,7 +276,8 @@ int server_read (void) {
             perror("read");
           }
           char* toReturn = readFile(toAccept);
-          free(buffer);
+          send(fd_list[i], toReturn, sizeof(fileReturn), 0);
+	  free(buffer);
         }
       }
       // release the lock
@@ -278,4 +293,10 @@ int server_read (void) {
 
 }
 
+int serverSend(char* toSend, int sendFD){
+  struct sockaddr_in address;
+  socklen_t peerAddrLen = sizeof(address);
+//  getpeername(sendFD, &address, &peerAddrLen);
+  return 1;
+}
 # endif /* SERVER_H */
