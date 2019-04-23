@@ -8,12 +8,22 @@ using namespace std;
 void* start_client (void* arg);
 int client(void);
 
+/* -----------------------------------------------------------------------------
+ * void* start_client (void* arg)
+ * Function for the client thread to start in. Calls client() where the client
+ * initializes and handles input from the human user of the program and messages
+ * from the servers.
+ * Parameters:
+ * - void* arg: a void pointer required by pthread_create(). Not used.
+ * Returns: nothing
+ * ---------------------------------------------------------------------------*/
 void* start_client(void* arg)
 {
   client();
   pthread_exit(NULL);
 }
 
+// TODO: docstring for this once it's done and we know exactly what it does
 int client(void) {
   // TODO: eventually this will NOT exit after a single message exchange.
   struct sockaddr_in address;
@@ -54,17 +64,21 @@ int client(void) {
     return -1;
   }
 
-  printf("Type in a filename to send\n");
+  // request a file from the server
+  printf("Type in a filename to request from the server\n");
   cin >> fileName;
+  // conver the file name to a cstring
   char* fileNameArr = new char[fileName.length()+1];
   strcpy(fileNameArr, fileName.c_str());
 
-  struct fileRequest* toRequest;
-  strcpy(toRequest->fileName, fileNameArr);
-  toRequest->portionToReturn = 0;
+  // create a request
+  struct fileRequest toRequest;
+  strcpy(toRequest.fileName, fileNameArr);
+  toRequest.portionToReturn = 0;
 
-  message = (char*)fileNameArr;
+  message = (char*)&fileNameArr;
 
+  // send the request
   int sent = send(sock, message, sizeof(fileRequest), 0);
   if (sent == -1) {
     perror("send");

@@ -30,11 +30,28 @@ struct fileReturn{
                         //has less than 1024 bytes of data left to send.
 }fileReturn;
 
+/* -----------------------------------------------------------------------------
+ * void* start_server_listen (void* arg)
+ * Function for the server listener thread to start in. Calls server_listen()
+ * where the server sets up and starts listening for new connections.
+ * Parameters:
+ * - void* arg: a void pointer required by pthread_create(). Not used.
+ * Returns: nothing
+ * ---------------------------------------------------------------------------*/
 void* start_server_listen(void* arg) {
   server_listen();
   pthread_exit(NULL);
 }
 
+/* -----------------------------------------------------------------------------
+ * void* start_server_read (void* arg)
+ * Function for the server reader thread to start in. Calls server_read()
+ * where the server calls select() in a loop to read new messages coming in
+ * from clients.
+ * Parameters:
+ * - void* arg: a void pointer required by pthread_create(). Not used.
+ * Returns: nothing
+ * ---------------------------------------------------------------------------*/
 void* start_server_read(void* arg) {
   server_read();
   pthread_exit(NULL);
@@ -74,15 +91,25 @@ char* readFile(struct fileRequest* toRetrieve){
   return((char*)toReturn);
 }
 
+/* -----------------------------------------------------------------------------
+ * int server_listen (void)
+ * The funtion that the server listener thread runs in. Sets up the socket to
+ * listen for new connections and then calls accept() in a loop to accept all
+ * new client connections. When a client connects, a file descriptor is assigned
+ * to the connection and added to the global fd_set readfds that the reader
+ * thread uses to receive client messages.
+ * Parameters: none
+ * Returns: nothing right now
+ * ---------------------------------------------------------------------------*/
 int server_listen(void) {
-  printf("initialize server\n");
   int serverFd, newSocket;
   int opt = 1;
   struct sockaddr_in address;
   int addrlen = sizeof(address);
 
   // create the listening file descriptor
-  // TODO: do we need to take care of error returns here?
+  // TODO: do we need to take care of error returns here? (i.e. what if socket()
+  // or setsockopt() fail)
   serverFd = socket(AF_INET, SOCK_STREAM, 0);
   setsockopt(serverFd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt));
 
@@ -112,7 +139,6 @@ int server_listen(void) {
     {
       perror("accept");
     }
-    printf("new socket: %i\n", newSocket);
 
     // ----------------------------------------------------------------------
     // get the lock and add it to the set of file descriptors to listen to
@@ -135,6 +161,15 @@ int server_listen(void) {
   return 0;
 }
 
+/* -----------------------------------------------------------------------------
+ * int server_read (void)
+ * Function that the server reader thread runs. In a loop, calls select() on the
+ * fd_set readfds of client connection file descriptors that is populated by the
+ * listener function. If it receives a request from a client, determines what
+ * information the client wants and sends back the correct information.
+ * Parameters: none
+ * Returns: nothing right now
+ * ---------------------------------------------------------------------------*/
 int server_read (void) {
   printf("server read\n");
   int ready;
@@ -154,7 +189,7 @@ int server_read (void) {
   // file descriptors that it uses if any new connections have come in
   struct timeval timeout;
   timeout.tv_sec = 5;
-  timeout.tv_usec = 100000; // 100 milliseconds; WE MAY WANT TO CHANGE THIS/
+  timeout.tv_usec = 100000; // 100 milliseconds; WE MAY WANT TO CHANGE THIS
 
   while (1) {
     // clear out the file descriptor sets to ensure they are empty
@@ -197,7 +232,14 @@ int server_read (void) {
     else if (ready != 0) {
       // iterate through all of the file descriptors that we may have
       // gotten data from and determine which ones actually sent us something
-      // TODO: SHOULD PUT THE LOCK AROUND THIS LOOP SINCE IT ACCESSES FD_LIST
+      // ----------------------------------------------------------------------
+      // we need the lock here because we access fd_list, which is shared with
+      // the listener thread
+      if (pthread_mutex_lock(&readfd_lock) == -1)
+      {
+        perror("pthread_mutex_lock");
+        // TODO: do something here to handle the error
+      }
       for (int i = 0; i < fd_list.size(); i++)
       {
         if (FD_ISSET(fd_list[i], &readfds_copy) != 0) {
@@ -215,6 +257,7 @@ int server_read (void) {
           }
           else
           {
+            // TODO: IF WE EXIT THE LOOP HERE, WE WILL NEED TO RELEASE THE LOCK
             free(buffer);
             perror("read");
           }
@@ -222,6 +265,13 @@ int server_read (void) {
           free(buffer);
         }
       }
+      // release the lock
+      if (pthread_mutex_unlock(&readfd_lock) == -1)
+      {
+        perror("pthread_mutex_unlock");
+        // TODO: handle the error
+      }
+      // ----------------------------------------------------------------------
     }
 
   }

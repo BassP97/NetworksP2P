@@ -30,15 +30,15 @@ int main(int argc,char *argv[]) {
     perror("pthread_mutex_init");
     // TODO: do something here
   }
-  printf("initialized lock\n");
 
   // ----------------------------------------------------------------------
+  // ensure that the readfds fd_set is zeroed out
   if (pthread_mutex_lock(&readfd_lock) == -1)
   {
     perror("pthread_mutex_lock");
     // TODO: do something here to handle the error
   }
-  FD_ZERO(&readfds); // zero out the fd set
+  FD_ZERO(&readfds);
   if (pthread_mutex_unlock(&readfd_lock) == -1)
   {
     perror("pthread_mutex_unlock");
@@ -46,6 +46,7 @@ int main(int argc,char *argv[]) {
   }
   // ----------------------------------------------------------------------
 
+  // create client thread
   rc = pthread_create(&threads[0], NULL, start_client, NULL);
   if (rc)
   {
@@ -58,6 +59,7 @@ int main(int argc,char *argv[]) {
     exit(-1);
   }
 
+  // create server listener thread
   rc = pthread_create(&threads[1], NULL, start_server_listen, NULL);
   if (rc)
   {
@@ -70,6 +72,7 @@ int main(int argc,char *argv[]) {
     exit(-1);
   }
 
+  // create server reader thread
   rc = pthread_create(&threads[2], NULL, start_server_read, NULL);
   if (rc)
   {
