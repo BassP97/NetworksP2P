@@ -95,10 +95,10 @@ char* readFile(struct clientMessage* toRetrieve){
   inFile.seekg(toRetrieve->portionToReturn*1024);
 
   //if there are less than 1024 bytes left in the file to read
-  if (length-(toRetrieve->portionToReturn*1024) > sizeof(toSend)){
+  if (size-(toRetrieve->portionToReturn*1024) > sizeof(toSend)){
     length = sizeof(toSend);                              //we have a kilobyte to send, so send a full kilobyte
   }else{
-    length = length-(toRetrieve->portionToReturn*1024);  //if not, just send the rest of the file
+    length = size-(toRetrieve->portionToReturn*1024);  //if not, just send the rest of the file
   }
   printf("file length assigned \n");
   inFile.read(toSend, length);
