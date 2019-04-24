@@ -4,14 +4,24 @@ A peer-to-peer file-sharing service made for our Computer Networking final proje
 
 Compilation: `g++ main.cpp -pthread -std=c++11`. The server listens to port 8080.
 
-### Protocol Message Types
+### Peer-to-peer structure
 
-Our protocol has two message structures: messages sent by a client (aka client messages) and messages sent by a server (aka server messages). Both structures can hold multiple types of message.
+Each instance of our peer-to-peer file-sharing service running on a single host has four threads, two client threads and two server threads.
 
-#### Client message fields
-- `char fileName[128]`: 128-byte field to store the file name the client is requesting. Unused if the message is not a file request.
-- `long portionToReturn`: 8-byte field to specify the part of the file we want. If this field holds N, the server should give us the Nth kilobyte of the file. Must be a `long` in order to work with some file system calls. Unused if the message is not a file request.
+#### Client threads
 
-#### Server message fields
-- `long positionInFile`: 8-byte field to specify the location in the destination file that the client should write the data to. If this field holds N, the client should write this data to the Nth kilobyte of the file.
-- 
+There are two client threads: a connector thread and a requester thread. The division of the client into a connector thread and a requester thread allows the client to connect to all available servers and simultaneously make requests to all of them.
+
+The connector thread repeated loops over a list of known hosts that may be running the program, attempting to establish connections with their servers. When a connection is made, the connector thread saves the socket file descriptor associated with the connection in `client_fd_list`, a shared vector with the requester thread. The connector thread continues to loop even after all active hosts have established connections because 1) more hosts may join the network at any time and 2) a host may drop out of the network and come back at any time, and we want the connector thread to be able to re-establish a connection.
+
+The requester thread waits for the human user to input a file to request from the other servers. It then determines which of the other servers have the file and sends requests for chunks of the file to the other servers until it has received the entire file. The user can then request more files.
+
+
+
+#### Server threads
+
+There are two server threads: a listener thread and a reader thread. The division of the server into a listener and a reader thread allows the server to service requests from multiple different clients.
+
+The listener thread sets up a listening port (port 8080) and just waits for clients to make connections. When a new connection comes in, the listener thread accepts it and puts the socket file descriptor for it in an `fd_set` `server_read_fds` and a vector `server_fd_list`. It then returns to listening for a new connection.
+
+The reader thread uses the `server_read_fds` `fd_set` to repeatedly call `select()` on all of the server's open connections. When it receives a request from a client, it determines what part of what file is being requested and sends it back to the requesting client.

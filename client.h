@@ -19,11 +19,10 @@ void showBytes(byte_pointer start, size_t len);
 vector<string> read_hosts(string filename);
 
 /* -----------------------------------------------------------------------------
- * TODO: UPDATE THIS DOCSTRING
- * void* start_client (void* arg)
- * Function for the client thread to start in. Calls client() where the client
- * initializes and handles input from the human user of the program and messages
- * from the servers.
+ * void* start_client_requester (void* arg)
+ * Function for the client requester thread to start in. Calls client_requester()
+ * which listens for user input on the command line, sends requests to servers,
+ * and processes the servers' responses.
  * Parameters:
  * - void* arg: a void pointer required by pthread_create(). Not used.
  * Returns: nothing
@@ -34,6 +33,17 @@ void* start_client_requester(void* arg)
   pthread_exit(NULL);
 }
 
+
+/* -----------------------------------------------------------------------------
+ * void* start_client_connector(void* arg)
+ * Function for the client connector thread to start in. Reads the list of known
+ * hosts, and repeatedly tries to connect to them. If a connection is successful
+ * we add its socket to the list of shared sockets with the client requester
+ * thread so that we can use it.
+ * Parameters:
+ * - void* arg: a void pointer required by pthread_create(). Not used.
+ * Returns: nothing
+ * ---------------------------------------------------------------------------*/
 void* start_client_connector(void* arg)
 {
   client_connector();
@@ -103,6 +113,20 @@ int client_requester (void) {
 
 }
 
+/* -----------------------------------------------------------------------------
+ * int client_connector (void)
+ * Function that the client connector thread runs in. Given a list of known
+ * hosts that might also be running the program, goes through them and attempts
+ * to make connections. If a connection is successful, we save the socket fd
+ * associated with it so that the client requester thread can use that connect-
+ * ion to request data from a server. If the connection is not successful,
+ * close the file descriptor. Loops infinitely, sleeping between each loop. It
+ * is necessary to continue to loop even if we have connected to all of the
+ * open servers because more may open OR one may close and then open back up
+ * again later.
+ * Parameters: none
+ * Returns: nothing right now
+ * ---------------------------------------------------------------------------*/
 int client_connector (void) {
   struct sockaddr_in address;
   int sock;
@@ -170,6 +194,7 @@ int client_connector (void) {
           // is connected to
           if (find(client_fd_list.begin(), client_fd_list.end(), sock) == client_fd_list.end()) {
             // ----------------------------------------------------------------------
+            // must be in the lock because the client fd list is shared with the client requester thread
             if (pthread_mutex_lock(&client_fd_lock) == -1)
             {
               perror("pthread_mutex_lock");
@@ -188,8 +213,8 @@ int client_connector (void) {
         }
       }
     }
-    // sleep for a bit before we try to connect again
-    if (usleep(2 * 1000000) == -1)
+    // sleep for a bit before we try to connect again (so we don't clog up the network too much)
+    if (usleep(2 * 10000000) == -1)
     {
       perror("usleep");
       // TODO: handle error
@@ -209,6 +234,15 @@ int writeToFile(struct serverMessage* toWrite, string fileName){
   return 1;
 }
 
+/* -----------------------------------------------------------------------------
+ * vector<string> read_hosts(string filename)
+ * Given a file of known host IP addresses, reads them and puts them in a
+ * vector of strings. We use this vector of strings to connect to new servers.
+ * Parameters:
+ * - string filename: the name of the file to read
+ * Returns: a vector of strings, where each is an IP address of a host that
+ * might be running the program. 
+ * ---------------------------------------------------------------------------*/
 vector<string> read_hosts(string filename) {
   ifstream file;
   vector<string> list; // will hold the list of IP addrs
