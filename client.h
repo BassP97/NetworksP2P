@@ -3,6 +3,7 @@
 
 #include "server.h"
 typedef unsigned char *byte_pointer;
+#define PORT 8080
 
 using namespace std;
 
@@ -10,6 +11,7 @@ void* start_client (void* arg);
 int client(void);
 int writeToFile(struct serverMessage* toWrite, string fileName);
 void showBytes(byte_pointer start, size_t len);
+vector<string> read_hosts(string filename);
 
 /* -----------------------------------------------------------------------------
  * void* start_client (void* arg)
@@ -31,7 +33,7 @@ int client(void) {
   // TODO: eventually this will NOT exit after a single message exchange.
   struct sockaddr_in address;
   int sock = 0, valRead;
-  int tempPort = 8080;
+  //int tempPort = 8080;
   fd_set readSet, writeSet;
   string fileName;
   struct timeVal;
@@ -44,30 +46,35 @@ int client(void) {
   char rawBuffer[sizeof(serverMessage)];
   char addr[8];
 
-  // lets the user specify the other host to connect to; will eventually
-  // be something that lets the user specify what file they want
-  // the specified host must be running an instance of this program for this to work
-  printf("Type in the address to send a message to:\n");
-  std::cin >> addr;
-  printf("trying to connect to %s\n",addr );
+  vector<string> host_list;
+  vector<int> socket_list;
 
-  sock = socket(AF_INET, SOCK_STREAM, 0);
+  // read in the IP addresses of hosts that might be running the program
+  host_list = read_hosts("hosts.txt");
 
-  memset(&servAddr, '0', sizeof(servAddr));
 
-  servAddr.sin_family = AF_INET;
-  servAddr.sin_port = htons(tempPort);
-
-  //Convert IPv4 addresses from text to binary form
-  inet_pton(AF_INET, addr, &servAddr.sin_addr);
-
-  // TODO: we shouldn't actually exist if a client can't connect somewhere
-  if (connect(sock, (struct sockaddr *)&servAddr, sizeof(servAddr)) == -1)
+  for (int i = 0; i < host_list.size(); i++)
   {
-    perror("connect");
-    return -1;
+    sock = socket(AF_INET, SOCK_STREAM, 0);
+
+    memset(&servAddr, '0', sizeof(servAddr));
+
+    servAddr.sin_family = AF_INET;
+    servAddr.sin_port = htons(PORT);
+
+    //Convert IPv4 addresses from text to binary form
+    //inet_pton(AF_INET, addr, &servAddr.sin_addr);
+    inet_pton(AF_INET, host_list[i], &servAddr.sin_addr);
+
+    // TODO: we shouldn't actually exist if a client can't connect somewhere
+    // what the fuck does that mean Hayley ^^^
+    if (connect(sock, (struct sockaddr *)&servAddr, sizeof(servAddr)) == -1)
+    {
+      perror("connect");
+      return -1;
+    }
+    printf("Successfully connected to %s\n",addr);
   }
-  printf("Successfully connected to %s\n",addr);
 
   // request a file from the server
   printf("Type in a filename to request from the server\n");
@@ -133,6 +140,26 @@ int writeToFile(struct serverMessage* toWrite, string fileName){
     }
   }
   return 1;
+}
+
+vector<string> read_hosts(string filename) {
+  ifstream file;
+  vector<string> list; // will hold the list of IP addrs
+
+  file.open(filename);
+  if (!file)
+  {
+    perror("open");
+  }
+  // read the IP addresses in from the file
+  string ip;
+  while (file >> ip)
+  {
+    list.push_back(ip);
+  }
+
+  file.close();
+  return list;
 }
 
 #endif /* CLIENT_H */

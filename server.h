@@ -5,7 +5,6 @@
 #include <fstream>
 #include <string>
 
-
 /*
 Paul's notes to self:
 Client needs a way to know when it is finished recieving data so it stops
@@ -27,19 +26,19 @@ int server_listen(void);
 int server_read (void);
 int serverSend(char* toSend, int sendFD);
 
+struct serverMessage{
+  long positionInFile;  //what position the data should be placed in
+  int bytesToUse;       //the number of bytes in the data that are "real" data - is typically 1024 unless a file
+                        //has less than 1024 bytes of data left to send.
+  long fileSize;        //file size in bytes
+  char data[1024];      //actual data we are returning
+}serverMessage;
+
 struct clientMessage{
   char fileName[128]; //name of the file we are requesting
   long portionToReturn;//the portion of the file we want returned - an integer corresponding to the Nth kilobyte
                        //has to be a long to work correctly with seekg in readFile
 }clientMessage;
-
-struct serverMessage{
-  char data[1024];      //actual data we are returning
-  long positionInFile;  //what position the data should be placed in
-  int bytesToUse;       //the number of bytes in the data that are "real" data - is typically 1024 unless a file
-                        //has less than 1024 bytes of data left to send.
-  long fileSize;         //file size in bytes
-}serverMessage;
 
 void showBytes(byte_pointer start, size_t len){
   int i;
@@ -271,11 +270,11 @@ int server_read (void) {
           memset(buffer, 0, sizeof(clientMessage));
           int valRead = read(fd_list[i], buffer, sizeof(clientMessage));
           struct clientMessage* toAccept = (struct clientMessage*)buffer;
-	  printf("%s", buffer);
+          printf("%s", buffer);
           showBytes((byte_pointer)toAccept->fileName, sizeof(clientMessage));
-	  printf("\n");
-	  showBytes((byte_pointer)buffer, sizeof(clientMessage));
-	  if (valRead > 0){
+          printf("\n");
+          showBytes((byte_pointer)buffer, sizeof(clientMessage));
+          if (valRead > 0){
             printf("printing received message:\n");
             printf("fileName requested: %s and returning starting at block %ld\n", toAccept->fileName, toAccept->portionToReturn);
           }
@@ -287,7 +286,7 @@ int server_read (void) {
           }
           char* toReturn = readFile(toAccept);
           send(fd_list[i], toReturn, sizeof(serverMessage), 0);
-	  free(buffer);
+          free(buffer);
         }
       }
       // release the lock
