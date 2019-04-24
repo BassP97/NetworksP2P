@@ -5,6 +5,8 @@
 #include <fstream>
 #include <string>
 
+using namespace std;
+
 /*
 Paul's notes to self:
 Client needs a way to know when it is finished recieving data so it stops
@@ -15,10 +17,9 @@ typedef unsigned char *byte_pointer;
 
 # define PORT 8080 // the port that the server listens for new connections on
 
-fd_set readfds; // global set of file descriptors for the reading server thread to watch
-int readfd_count; // number of file descriptors in the set
-pthread_mutex_t readfd_lock; // lock for readfds since it's global and accessed by multiple threads
-std::vector<int> fd_list; // list of currently active file descriptors
+fd_set server_readfds; // global set of file descriptors for the reading server thread to watch
+pthread_mutex_t server_readfd_lock; // lock for server_readfds since it's global and accessed by multiple threads
+vector<int> server_fd_list; // list of currently active file descriptors
 
 void* start_server_listen(void* arg);
 void* start_server_read(void* arg);
@@ -116,7 +117,7 @@ char* readFile(struct clientMessage* toRetrieve){
  * The funtion that the server listener thread runs in. Sets up the socket to
  * listen for new connections and then calls accept() in a loop to accept all
  * new client connections. When a client connects, a file descriptor is assigned
- * to the connection and added to the global fd_set readfds that the reader
+ * to the connection and added to the global fd_set server_readfds that the reader
  * thread uses to receive client messages.
  * Parameters: none
  * Returns: nothing right now
@@ -162,15 +163,15 @@ int server_listen(void) {
 
     // ----------------------------------------------------------------------
     // get the lock and add it to the set of file descriptors to listen to
-    if (pthread_mutex_lock(&readfd_lock) == -1)
+    if (pthread_mutex_lock(&server_readfd_lock) == -1)
     {
       perror("pthread_mutex_lock");
       // TODO: do something here to handle the error
     }
-    FD_SET(newSocket, &readfds); // put the file descriptor in the set
-    readfd_count++;
-    fd_list.push_back(newSocket);
-    if (pthread_mutex_unlock(&readfd_lock) == -1)
+    FD_SET(newSocket, &server_readfds); // put the file descriptor in the set
+    //readfd_count++;
+    server_fd_list.push_back(newSocket);
+    if (pthread_mutex_unlock(&server_readfd_lock) == -1)
     {
       perror("pthread_mutex_unlock");
       // TODO: handle the error
@@ -184,7 +185,7 @@ int server_listen(void) {
 /* -----------------------------------------------------------------------------
  * int server_read (void)
  * Function that the server reader thread runs. In a loop, calls select() on the
- * fd_set readfds of client connection file descriptors that is populated by the
+ * fd_set server_readfds of client connection file descriptors that is populated by the
  * listener function. If it receives a request from a client, determines what
  * information the client wants and sends back the correct information.
  * Parameters: none
@@ -198,11 +199,10 @@ int server_read (void) {
   fd_set writefds;
   fd_set exceptfds;
 
-  // copy of readfds to pass to select(); this is necessary because select()
+  // copy of server_readfds to pass to select(); this is necessary because select()
   // changes the fd_sets it gets IN PLACE and we need to remember what was
   // in the set
-  fd_set readfds_copy;
-  int readfd_count_copy;
+  fd_set server_readfds_copy;
 
   // timeout interval for the select() call. if it doesn't get anything, we
   // want it to timeout so that the listener thread can update the set of
@@ -213,38 +213,37 @@ int server_read (void) {
 
   while (1) {
     // clear out the file descriptor sets to ensure they are empty
-    FD_ZERO(&readfds_copy);
+    FD_ZERO(&server_readfds_copy);
     FD_ZERO(&writefds);
     FD_ZERO(&exceptfds);
     // ----------------------------------------------------------------------
-    // get the lock so that we can make a copy of readfds to pass to select
-    if (pthread_mutex_lock(&readfd_lock) == -1)
+    // get the lock so that we can make a copy of server_readfds to pass to select
+    if (pthread_mutex_lock(&server_readfd_lock) == -1)
     {
       perror("pthread_mutex_lock");
       // TODO: do something here to handle the error
     }
-    readfds_copy = readfds;
-    readfd_count_copy = readfd_count;
+    server_readfds_copy = server_readfds;
     int nfds = 0;
     // determine what nfds should be; it is supposed to be the largest FD in the set + 1
     // TODO: THIS IS SUPER INEFFICIENT, WE SHOULD JUST KEEP THIS VECTOR SORTED
-    for (int i = 0; i < fd_list.size(); i++)
+    for (int i = 0; i < server_fd_list.size(); i++)
     {
-      if (fd_list[i] > nfds)
+      if (server_fd_list[i] > nfds)
       {
-        nfds = fd_list[i];
+        nfds = server_fd_list[i];
       }
     }
     nfds++;
-    if (pthread_mutex_unlock(&readfd_lock) == -1)
+    if (pthread_mutex_unlock(&server_readfd_lock) == -1)
     {
       perror("pthread_mutex_unlock");
       // TODO: handle the error
     }
     // ----------------------------------------------------------------------
 
-    // call select on the copy of readfds
-    ready = select(nfds, &readfds_copy, &writefds, &exceptfds, &timeout);
+    // call select on the copy of server_readfds
+    ready = select(nfds, &server_readfds_copy, &writefds, &exceptfds, &timeout);
     if (ready == -1) {
       perror("select");
       // TODO: handle the error
@@ -253,22 +252,22 @@ int server_read (void) {
       // iterate through all of the file descriptors that we may have
       // gotten data from and determine which ones actually sent us something
       // ----------------------------------------------------------------------
-      // we need the lock here because we access fd_list, which is shared with
+      // we need the lock here because we access server_fd_list, which is shared with
       // the listener thread
-      if (pthread_mutex_lock(&readfd_lock) == -1)
+      if (pthread_mutex_lock(&server_readfd_lock) == -1)
       {
         perror("pthread_mutex_lock");
         // TODO: do something here to handle the error
       }
-      for (int i = 0; i < fd_list.size(); i++)
+      for (int i = 0; i < server_fd_list.size(); i++)
       {
-        if (FD_ISSET(fd_list[i], &readfds_copy) != 0) {
-          printf("got data from fd %i\n", fd_list[i]);
+        if (FD_ISSET(server_fd_list[i], &server_readfds_copy) != 0) {
+          printf("got data from fd %i\n", server_fd_list[i]);
           // some temporary code to read the message from the client
           size_t requestSize = sizeof(clientMessage);
           char* buffer = new char[requestSize];
           memset(buffer, 0, sizeof(clientMessage));
-          int valRead = read(fd_list[i], buffer, sizeof(clientMessage));
+          int valRead = read(server_fd_list[i], buffer, sizeof(clientMessage));
           struct clientMessage* toAccept = (struct clientMessage*)buffer;
           printf("%s", buffer);
           showBytes((byte_pointer)toAccept->fileName, sizeof(clientMessage));
@@ -285,12 +284,12 @@ int server_read (void) {
             perror("read");
           }
           char* toReturn = readFile(toAccept);
-          send(fd_list[i], toReturn, sizeof(serverMessage), 0);
+          send(server_fd_list[i], toReturn, sizeof(serverMessage), 0);
           free(buffer);
         }
       }
       // release the lock
-      if (pthread_mutex_unlock(&readfd_lock) == -1)
+      if (pthread_mutex_unlock(&server_readfd_lock) == -1)
       {
         perror("pthread_mutex_unlock");
         // TODO: handle the error

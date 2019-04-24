@@ -10,6 +10,8 @@
 #include <pthread.h>
 #include <sys/select.h>
 #include <vector>
+#include <netdb.h>
+#include <algorithm>
 #include "client.h"
 #include "server.h"
 
@@ -21,11 +23,18 @@ using namespace std;
 
 int main(int argc,char *argv[]) {
 
-  pthread_t threads[3]; // 3 threads - one client, one server listening for new connections, one server reading requests
+  pthread_t threads[4]; // 3 threads
   int rc;
 
   // initialize lock for list of FDs to read in select()
-  if (pthread_mutex_init(&readfd_lock, NULL) == -1)
+  if (pthread_mutex_init(&server_readfd_lock, NULL) == -1)
+  {
+    perror("pthread_mutex_init");
+    // TODO: do something here
+  }
+
+  // initialize lock for client FD
+  if (pthread_mutex_init(&client_fd_lock, NULL) == -1)
   {
     perror("pthread_mutex_init");
     // TODO: do something here
@@ -33,25 +42,46 @@ int main(int argc,char *argv[]) {
 
   // ----------------------------------------------------------------------
   // ensure that the readfds fd_set is zeroed out
-  if (pthread_mutex_lock(&readfd_lock) == -1)
+  if (pthread_mutex_lock(&server_readfd_lock) == -1)
   {
     perror("pthread_mutex_lock");
     // TODO: do something here to handle the error
   }
-  FD_ZERO(&readfds);
-  if (pthread_mutex_unlock(&readfd_lock) == -1)
+  FD_ZERO(&server_readfds);
+  if (pthread_mutex_unlock(&server_readfd_lock) == -1)
   {
     perror("pthread_mutex_unlock");
     // TODO: handle the error
   }
   // ----------------------------------------------------------------------
 
-  // create client thread
-  rc = pthread_create(&threads[0], NULL, start_client, NULL);
+  // create client connector thread
+  rc = pthread_create(&threads[0], NULL, start_client_connector, NULL);
   if (rc)
   {
     perror("pthread_create");
-    if (pthread_mutex_destroy(&readfd_lock) == -1)
+    if (pthread_mutex_destroy(&server_readfd_lock) == -1)
+    {
+      perror("pthread_mutex_destroy");
+    }
+    if (pthread_mutex_destroy(&client_fd_lock) == -1)
+    {
+      perror("pthread_mutex_destroy");
+    }
+    pthread_exit(NULL);
+    exit(-1);
+  }
+
+  // create client requester thread
+  rc = pthread_create(&threads[1], NULL, start_client_requester, NULL);
+  if (rc)
+  {
+    perror("pthread_create");
+    if (pthread_mutex_destroy(&server_readfd_lock) == -1)
+    {
+      perror("pthread_mutex_destroy");
+    }
+    if (pthread_mutex_destroy(&client_fd_lock) == -1)
     {
       perror("pthread_mutex_destroy");
     }
@@ -60,11 +90,15 @@ int main(int argc,char *argv[]) {
   }
 
   // create server listener thread
-  rc = pthread_create(&threads[1], NULL, start_server_listen, NULL);
+  rc = pthread_create(&threads[2], NULL, start_server_listen, NULL);
   if (rc)
   {
     perror("pthread_create");
-    if (pthread_mutex_destroy(&readfd_lock) == -1)
+    if (pthread_mutex_destroy(&server_readfd_lock) == -1)
+    {
+      perror("pthread_mutex_destroy");
+    }
+    if (pthread_mutex_destroy(&client_fd_lock) == -1)
     {
       perror("pthread_mutex_destroy");
     }
@@ -73,11 +107,15 @@ int main(int argc,char *argv[]) {
   }
 
   // create server reader thread
-  rc = pthread_create(&threads[2], NULL, start_server_read, NULL);
+  rc = pthread_create(&threads[3], NULL, start_server_read, NULL);
   if (rc)
   {
     perror("pthread_create");
-    if (pthread_mutex_destroy(&readfd_lock) == -1)
+    if (pthread_mutex_destroy(&server_readfd_lock) == -1)
+    {
+      perror("pthread_mutex_destroy");
+    }
+    if (pthread_mutex_destroy(&client_fd_lock) == -1)
     {
       perror("pthread_mutex_destroy");
     }
@@ -86,7 +124,11 @@ int main(int argc,char *argv[]) {
   }
 
   // destroy the lock
-  if (pthread_mutex_destroy(&readfd_lock) == -1)
+  if (pthread_mutex_destroy(&server_readfd_lock) == -1)
+  {
+    perror("pthread_mutex_destroy");
+  }
+  if (pthread_mutex_destroy(&client_fd_lock) == -1)
   {
     perror("pthread_mutex_destroy");
   }
