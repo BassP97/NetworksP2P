@@ -65,7 +65,7 @@ int client_requester (void) {
   //conver the file name to a cstring
   char* fileNameArr = new char[fileName.length()+1];
   strcpy(fileNameArr, fileName.c_str());
-  //
+
   // create a request
   struct clientMessage toRequest;
   strcpy(toRequest.fileName, fileNameArr);

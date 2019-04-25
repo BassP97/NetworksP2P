@@ -12,6 +12,15 @@ Paul's notes to self:
 Client needs a way to know when it is finished recieving data so it stops
 requesting - solution: server needs to return file size when it sends the first
 packet of the transmission - add a file size parameter to serverMessage
+
+lock notes:
+use lock around code that uses client_fd_list to avoid race conditions
+
+broad strokes notes for 4/25:
+- initial broadcast to all peers asking if they have a file
+- Handing recieving different parts of a file and adding them
+  - keep file open until we've recieved whole thing - add elements as we recieve
+    them from the server
 */
 typedef unsigned char *byte_pointer;
 
@@ -26,6 +35,7 @@ void* start_server_read(void* arg);
 int server_listen(void);
 int server_read (void);
 int serverSend(char* toSend, int sendFD);
+int arrayCheck(char* toCheck, int arraySize);
 
 struct serverMessage{
   long positionInFile;  //what position the data should be placed in
@@ -48,6 +58,16 @@ void showBytes(byte_pointer start, size_t len){
   printf("\n");
 }
 
+int arrayCheck(char* toCheck, int arraySize){
+  int sum=0;
+  for (int i = 0; i<arraySize; i++){
+    sum = sum+toCheck[i];
+  }
+  if(sum != 0){
+    return 1;
+  }
+  return -1;
+}
 /* -----------------------------------------------------------------------------
  * void* start_server_listen (void* arg)
  * Function for the server listener thread to start in. Calls server_listen()
@@ -85,7 +105,7 @@ char* readFile(struct clientMessage* toRetrieve){
 
   inFile.open(toRetrieve->fileName);
   if (!inFile) {
-      printf("Unable to open file");
+      printf("Unable to open file\n");
       exit(0);
   }
   printf("file successfully opened \n");
@@ -263,28 +283,36 @@ int server_read (void) {
       {
         if (FD_ISSET(server_fd_list[i], &server_readfds_copy) != 0) {
           printf("got data from fd %i\n", server_fd_list[i]);
+
           // some temporary code to read the message from the client
           size_t requestSize = sizeof(clientMessage);
           char* buffer = new char[requestSize];
           memset(buffer, 0, sizeof(clientMessage));
           int valRead = read(server_fd_list[i], buffer, sizeof(clientMessage));
-          struct clientMessage* toAccept = (struct clientMessage*)buffer;
-          printf("%s", buffer);
-          showBytes((byte_pointer)toAccept->fileName, sizeof(clientMessage));
-          printf("\n");
-          showBytes((byte_pointer)buffer, sizeof(clientMessage));
           if (valRead > 0){
-            printf("printing received message:\n");
-            printf("fileName requested: %s and returning starting at block %ld\n", toAccept->fileName, toAccept->portionToReturn);
-          }
-          else
-          {
+
+            if (arrayCheck(buffer, (int)sizeof(clientMessage))){
+              struct clientMessage* toAccept = (struct clientMessage*)buffer;
+
+              printf("printing received message:\n");
+              printf("fileName requested: %s and returning starting at block %ld\n", toAccept->fileName, toAccept->portionToReturn);
+
+              showBytes((byte_pointer)toAccept->fileName, sizeof(clientMessage));
+              printf("\n");
+              showBytes((byte_pointer)buffer, sizeof(clientMessage));
+
+              char* toReturn = readFile(toAccept);
+              send(server_fd_list[i], toReturn, sizeof(serverMessage), 0);
+            }else{
+              printf("Null message recieved\n");
+            }
+
+            }
+          else{
             // TODO: IF WE EXIT THE LOOP HERE, WE WILL NEED TO RELEASE THE LOCK
             free(buffer);
             perror("read");
           }
-          char* toReturn = readFile(toAccept);
-          send(server_fd_list[i], toReturn, sizeof(serverMessage), 0);
           free(buffer);
         }
       }
