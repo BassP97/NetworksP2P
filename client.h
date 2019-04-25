@@ -78,37 +78,37 @@ int client_requester (void) {
   showBytes((byte_pointer)message, sizeof(clientMessage));
   printf("\n");
   showBytes((byte_pointer)&toRequest, sizeof(clientMessage));
-  //
-  // // send the request
-  // int sent = send(sock, message, sizeof(clientMessage), 0);
-  // if (sent == -1) {
-  //   perror("send");
-  // }
-  //
-  // valRead = read(sock, rawBuffer, sizeof(serverMessage));
-  // if (valRead == -1){
-  //   perror("read");
-  // }
-  //
-  // serverReturn = (struct serverMessage*)rawBuffer;
-  // printf("Recieved data\n");
-  // showBytes((byte_pointer)rawBuffer, sizeof(serverMessage));
-  // serverReturn = (struct serverMessage*)rawBuffer;
-  //
-  // //printf("Data after processing:\n");
-  // //showBytes((byte_pointer)serverReturn->data, size_t(serverReturn->bytesToUse));
-  //
-  // printf("Data parameters \nFile size: %li \nPosition in file: %li\nBytes to use %i\n",
-  // serverReturn->fileSize, serverReturn->positionInFile, serverReturn->bytesToUse);
-  //
-  // if(writeToFile(serverReturn, fileName)){
-  //   printf("successfully wrote to %s\n", fileName.c_str());
-  // }else{
-  //   printf("failed to write to file\n");
-  // }
-  //
-  // close(sock);
-  // delete[] fileNameArr;
+
+  // send the request
+  int sent = send(sock, message, sizeof(clientMessage), 0);
+  if (sent == -1) {
+    perror("send");
+  }
+
+  valRead = read(sock, rawBuffer, sizeof(serverMessage));
+  if (valRead == -1){
+    perror("read");
+  }
+
+  serverReturn = (struct serverMessage*)rawBuffer;
+  printf("Recieved data\n");
+  showBytes((byte_pointer)rawBuffer, sizeof(serverMessage));
+  serverReturn = (struct serverMessage*)rawBuffer;
+
+  //printf("Data after processing:\n");
+  //showBytes((byte_pointer)serverReturn->data, size_t(serverReturn->bytesToUse));
+
+  printf("Data parameters \nFile size: %li \nPosition in file: %li\nBytes to use %i\n",
+  serverReturn->fileSize, serverReturn->positionInFile, serverReturn->bytesToUse);
+
+  if(writeToFile(serverReturn, fileName)){
+    printf("successfully wrote to %s\n", fileName.c_str());
+  }else{
+    printf("failed to write to file\n");
+  }
+
+  close(sock);
+  delete[] fileNameArr;
   return 0;
 
 }
