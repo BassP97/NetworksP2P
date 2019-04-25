@@ -105,63 +105,77 @@ int client_requester (void) {
     serverReturn = (struct serverMessage*)rawBuffer;
     if (serverReturn->hasFile == 1){
       serversWithFile.push_back(client_fd_list[i]);
+      printf("File descriptor %i has the file\n", client_fd_list[i]);
     }
   }
+  printf("Done with gathering partners with file\n");
 
   if (pthread_mutex_unlock(&client_fd_lock) == -1){
     perror("pthread_mutex_unlock");
   }
+  printf("unlocking\n");
+
 
   //============================STAGE TWO==================================
   //Iterate through the list of servers with the file, getting the file bit by
   //bit from each of them in turn
+  memset(rawBuffer, 0, sizeof(serverMessage));
   serverReturn->bytesToUse = 1;
   int filePortion = 0;
   toRequest.portionToReturn = 0;
   toRequest.haveFile = 0;
   int filePosition = 0;
 
-  while(serverReturn->bytesToUse!=0){
-    for(int i = 0; i < serversWithFile.size(); i++){
-      toRequest.portionToReturn = filePosition;
-      message = (char*)&toRequest;
+  if(serversWithFile.size()==0){
+    printf("No servers have the file you requested. Double check for typos!\n");
+  }else{
+    printf("Pinging servers with the file you requested\n");
+    while(serverReturn->bytesToUse!=0){
+      for(int i = 0; i < serversWithFile.size(); i++){
+        toRequest.portionToReturn = filePosition;
+        message = (char*)&toRequest;
 
-      //send the request
-      int sent = send(sock, message, sizeof(clientMessage), 0);
-      if (sent == -1) {
-        perror("send");
-      }
+        //send the request
+        int sent = send(serversWithFile[i], message, sizeof(clientMessage), 0);
+        if (sent == -1) {
+          perror("send");
+        }
 
-      //Get the reply
-      valRead = read(serversWithFile[i], rawBuffer, sizeof(serverMessage));
-      if (valRead == -1){
-        perror("read");
-      }
+        //Get the reply
+        valRead = read(serversWithFile[i], rawBuffer, sizeof(serverMessage));
+        if (valRead == -1){
+          perror("read");
+        }
 
-      //process the reply accordingly
-      serverReturn = (struct serverMessage*)rawBuffer;
-      printf("Recieved data\n");
-      showBytes((byte_pointer)rawBuffer, sizeof(serverMessage));
-      serverReturn = (struct serverMessage*)rawBuffer;
+        //process the reply accordingly
+        serverReturn = (struct serverMessage*)rawBuffer;
+        printf("Recieved data\n");
+        showBytes((byte_pointer)rawBuffer, sizeof(serverMessage));
+        serverReturn = (struct serverMessage*)rawBuffer;
+        printf("Created server return \n");
 
-      //printf("Data after processing:\n");
-      //showBytes((byte_pointer)serverReturn->data, size_t(serverReturn->bytesToUse));
+        //printf("Data after processing:\n");
+        //showBytes((byte_pointer)serverReturn->data, size_t(serverReturn->bytesToUse));
 
-      printf("Data parameters \nFile size: %li \nPosition in file: %li\nBytes to use %i\n",
-      serverReturn->fileSize, serverReturn->positionInFile, serverReturn->bytesToUse);
+        printf("Data parameters \nFile size: %li \nPosition in file: %li\nBytes to use %i\n",
+        serverReturn->fileSize, serverReturn->positionInFile, serverReturn->bytesToUse);
 
-      //if the server tells us that there is no more data to send, we break
-      if (serverReturn->bytesToUse == 0){
-        break;
-      }
+        //if the server tells us that there is no more data to send, we break
+        if (serverReturn->bytesToUse == 0){
+          break;
+        }
 
-      if(writeToFile(serverReturn, fileName)){
-        printf("successfully wrote to %s\n", fileName.c_str());
-      }else{
-        printf("failed to write to file\n");
+        printf("Writing to file \n");
+
+        if(writeToFile(serverReturn, fileName)){
+          printf("successfully wrote to %s\n", fileName.c_str());
+        }else{
+          printf("failed to write to file\n");
+        }
       }
     }
   }
+
   delete[] fileNameArr;
   return 0;
 

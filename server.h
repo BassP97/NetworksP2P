@@ -295,12 +295,6 @@ int server_read (void) {
         if (FD_ISSET(server_fd_list[i], &server_readfds_copy) != 0) {
           printf("got data from fd %i %d\n", server_fd_list[i], sum);
           sum++;
-          if (usleep(1000000) == -1)
-          {
-            perror("usleep");
-            // TODO: handle error
-          }
-
           // some temporary code to read the message from the client
           size_t requestSize = sizeof(clientMessage);
           char* buffer = new char[requestSize];
