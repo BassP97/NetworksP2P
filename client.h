@@ -70,44 +70,98 @@ int client_requester (void) {
   struct clientMessage toRequest;
   strcpy(toRequest.fileName, fileNameArr);
   toRequest.portionToReturn = 0;
-  //
+  toRequest.haveFile = 1;
+
   printf("Requesting file with name %s\n",toRequest.fileName);
   printf("Requesting block number %ld\n",toRequest.portionToReturn);
-  //
+
+
   message = (char*)&toRequest;
   showBytes((byte_pointer)message, sizeof(clientMessage));
   printf("\n");
   showBytes((byte_pointer)&toRequest, sizeof(clientMessage));
 
-  // send the request
-  int sent = send(sock, message, sizeof(clientMessage), 0);
-  if (sent == -1) {
-    perror("send");
+  if (pthread_mutex_lock(&client_fd_lock) == -1){
+    perror("pthread_mutex_lock");
   }
 
-  valRead = read(sock, rawBuffer, sizeof(serverMessage));
-  if (valRead == -1){
-    perror("read");
+  //============================STAGE ONE==================================
+  //Identify which servers have the file we want
+  vector<int> serversWithFile;
+  int sent;
+
+  for(int i = 0; i<client_fd_list.size(); i++){
+
+    sent = send(client_fd_list[i], message, sizeof(clientMessage), 0);
+    if (sent == -1) {
+      perror("send");
+    }
+
+    valRead = read(client_fd_list[i], rawBuffer, sizeof(serverMessage));
+    if (valRead == -1){
+      perror("read");
+    }
+
+    serverReturn = (struct serverMessage*)rawBuffer;
+    if (serverReturn->hasFile == 1){
+      serversWithFile.push_back(client_fd_list[i]);
+    }
   }
 
-  serverReturn = (struct serverMessage*)rawBuffer;
-  printf("Recieved data\n");
-  showBytes((byte_pointer)rawBuffer, sizeof(serverMessage));
-  serverReturn = (struct serverMessage*)rawBuffer;
-
-  //printf("Data after processing:\n");
-  //showBytes((byte_pointer)serverReturn->data, size_t(serverReturn->bytesToUse));
-
-  printf("Data parameters \nFile size: %li \nPosition in file: %li\nBytes to use %i\n",
-  serverReturn->fileSize, serverReturn->positionInFile, serverReturn->bytesToUse);
-
-  if(writeToFile(serverReturn, fileName)){
-    printf("successfully wrote to %s\n", fileName.c_str());
-  }else{
-    printf("failed to write to file\n");
+  if (pthread_mutex_unlock(&client_fd_lock) == -1){
+    perror("pthread_mutex_unlock");
   }
 
-  close(sock);
+  //============================STAGE TWO==================================
+  //Iterate through the list of servers with the file, getting the file bit by
+  //bit from each of them in turn
+  serverReturn->bytesToUse = 1;
+  int filePortion = 0;
+  toRequest.portionToReturn = 0;
+  toRequest.haveFile = 0;
+  int filePosition = 0;
+
+  while(serverReturn->bytesToUse!=0){
+    for(int i = 0; i < serversWithFile.size(); i++){
+      toRequest.portionToReturn = filePosition;
+      message = (char*)&toRequest;
+
+      //send the request
+      int sent = send(sock, message, sizeof(clientMessage), 0);
+      if (sent == -1) {
+        perror("send");
+      }
+
+      //Get the reply
+      valRead = read(serversWithFile[i], rawBuffer, sizeof(serverMessage));
+      if (valRead == -1){
+        perror("read");
+      }
+
+      //process the reply accordingly
+      serverReturn = (struct serverMessage*)rawBuffer;
+      printf("Recieved data\n");
+      showBytes((byte_pointer)rawBuffer, sizeof(serverMessage));
+      serverReturn = (struct serverMessage*)rawBuffer;
+
+      //printf("Data after processing:\n");
+      //showBytes((byte_pointer)serverReturn->data, size_t(serverReturn->bytesToUse));
+
+      printf("Data parameters \nFile size: %li \nPosition in file: %li\nBytes to use %i\n",
+      serverReturn->fileSize, serverReturn->positionInFile, serverReturn->bytesToUse);
+
+      //if the server tells us that there is no more data to send, we break
+      if (serverReturn->bytesToUse == 0){
+        break;
+      }
+
+      if(writeToFile(serverReturn, fileName)){
+        printf("successfully wrote to %s\n", fileName.c_str());
+      }else{
+        printf("failed to write to file\n");
+      }
+    }
+  }
   delete[] fileNameArr;
   return 0;
 
@@ -214,7 +268,7 @@ int client_connector (void) {
       }
     }
     // sleep for a bit before we try to connect again (so we don't clog up the network too much)
-    if (usleep(1000000) == -1)
+    if (usleep(10000000) == -1)
     {
       perror("usleep");
       // TODO: handle error

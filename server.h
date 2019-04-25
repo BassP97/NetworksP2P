@@ -43,12 +43,15 @@ struct serverMessage{
                         //has less than 1024 bytes of data left to send.
   long fileSize;        //file size in bytes
   char data[1024];      //actual data we are returning
+  char hasFile;         //Updated if haveFile in the client message is 1 - has value 1 if we have file, 0 if not
 }serverMessage;
 
 struct clientMessage{
   char fileName[128]; //name of the file we are requesting
   long portionToReturn;//the portion of the file we want returned - an integer corresponding to the Nth kilobyte
                        //has to be a long to work correctly with seekg in readFile
+  char haveFile;       //A boolean value that tells the server we are asking if they have the file in fileName
+                       //when actually requesting file data this is 0, when asking if a server has a file is 1
 }clientMessage;
 
 void showBytes(byte_pointer start, size_t len){
@@ -66,7 +69,7 @@ int arrayCheck(char* toCheck, int arraySize){
   if(sum != 0){
     return 1;
   }
-  return -1;
+  return 0;
 }
 /* -----------------------------------------------------------------------------
  * void* start_server_listen (void* arg)
@@ -100,18 +103,25 @@ char* readFile(struct clientMessage* toRetrieve){
   char toSend[1024];
   size_t startLocation;
   size_t length;
+  size_t size = 0;
   struct serverMessage* toReturn;
   toReturn = (struct serverMessage*)malloc(sizeof(struct serverMessage));
 
   inFile.open(toRetrieve->fileName);
-  if (!inFile) {
-      printf("Unable to open file\n");
-      exit(0);
+  if (!inFile && toRetrieve->haveFile == 1){
+    toReturn->positionInFile = toRetrieve->portionToReturn;
+    toReturn->bytesToUse = length;
+    toReturn->fileSize = (long)size;
+    toReturn->hasFile = 0;
+    return((char*)toReturn);
+  }else if(!inFile){
+    printf("Unable to open file\n");
+    exit(0);
   }
   printf("file successfully opened \n");
   //get the total file size and set the position to the byte we have to read
   inFile.seekg(0, inFile.end);
-  size_t size = inFile.tellg();
+  size = inFile.tellg();
   inFile.seekg(toRetrieve->portionToReturn*1024);
 
   //if there are less than 1024 bytes left in the file to read
@@ -129,6 +139,7 @@ char* readFile(struct clientMessage* toRetrieve){
   toReturn->positionInFile = toRetrieve->portionToReturn;
   toReturn->bytesToUse = length;
   toReturn->fileSize = (long)size;
+  toReturn->hasFile = 1;
   return((char*)toReturn);
 }
 
@@ -160,7 +171,7 @@ int server_listen(void) {
   address.sin_port = htons(PORT);
 
   // attach socket to the port
-  if (bind(serverFd, (struct sockaddr *)&address, sizeof(address)) == -1) {
+  if (::bind(serverFd, (struct sockaddr *)&address, sizeof(address)) == -1) {
     perror("bind");
     // TODO: exit? do something
   }
@@ -230,7 +241,7 @@ int server_read (void) {
   struct timeval timeout;
   timeout.tv_sec = 5;
   timeout.tv_usec = 100000; // 100 milliseconds; WE MAY WANT TO CHANGE THIS
-
+  int sum = 1;
   while (1) {
     // clear out the file descriptor sets to ensure they are empty
     FD_ZERO(&server_readfds_copy);
@@ -282,7 +293,13 @@ int server_read (void) {
       for (int i = 0; i < server_fd_list.size(); i++)
       {
         if (FD_ISSET(server_fd_list[i], &server_readfds_copy) != 0) {
-          printf("got data from fd %i\n", server_fd_list[i]);
+          printf("got data from fd %i %d\n", server_fd_list[i], sum);
+          sum++;
+          if (usleep(1000000) == -1)
+          {
+            perror("usleep");
+            // TODO: handle error
+          }
 
           // some temporary code to read the message from the client
           size_t requestSize = sizeof(clientMessage);
@@ -306,14 +323,13 @@ int server_read (void) {
             }else{
               printf("Null message recieved\n");
             }
-
-            }
-          else{
+            free(buffer);
+          }else{
             // TODO: IF WE EXIT THE LOOP HERE, WE WILL NEED TO RELEASE THE LOCK
             free(buffer);
             perror("read");
           }
-          free(buffer);
+
         }
       }
       // release the lock
