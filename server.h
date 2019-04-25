@@ -163,12 +163,13 @@ int server_listen(void) {
   // TODO: do we need to take care of error returns here? (i.e. what if socket()
   // or setsockopt() fail)
   serverFd = socket(AF_INET, SOCK_STREAM, 0);
-  setsockopt(serverFd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt));
 
   address.sin_family = AF_INET;
   address.sin_addr.s_addr = INADDR_ANY;
 
   address.sin_port = htons(PORT);
+
+  setsockopt(serverFd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt));
 
   // attach socket to the port
   if (::bind(serverFd, (struct sockaddr *)&address, sizeof(address)) == -1) {
@@ -295,7 +296,6 @@ int server_read (void) {
         if (FD_ISSET(server_fd_list[i], &server_readfds_copy) != 0) {
           printf("got data from fd %i %d\n", server_fd_list[i], sum);
           sum++;
-          // some temporary code to read the message from the client
           size_t requestSize = sizeof(clientMessage);
           char* buffer = new char[requestSize];
           memset(buffer, 0, sizeof(clientMessage));

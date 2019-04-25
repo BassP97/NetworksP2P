@@ -51,6 +51,8 @@ void* start_client_connector(void* arg)
 }
 
 // TODO: docstring for this once it's done and we know exactly what it does
+// TODO: need to handle a case where we try to request something but we aren't
+// connected to any servers
 int client_requester (void) {
   string fileName;
   char* message;
@@ -126,11 +128,15 @@ int client_requester (void) {
   toRequest.haveFile = 0;
   int filePosition = 0;
 
+  long fileSize = -1;
+  long bytesReceived = 0;
+
   if(serversWithFile.size()==0){
     printf("No servers have the file you requested. Double check for typos!\n");
   }else{
     printf("Pinging servers with the file you requested\n");
-    while(serverReturn->bytesToUse!=0){
+    //while(serverReturn->bytesToUse!=0){
+    while (fileSize < bytesReceived) {
       for(int i = 0; i < serversWithFile.size(); i++){
         toRequest.portionToReturn = filePosition;
         message = (char*)&toRequest;
@@ -148,11 +154,14 @@ int client_requester (void) {
         }
 
         //process the reply accordingly
-        serverReturn = (struct serverMessage*)rawBuffer;
+        // serverReturn = (struct serverMessage*)rawBuffer;
         printf("Recieved data\n");
         showBytes((byte_pointer)rawBuffer, sizeof(serverMessage));
         serverReturn = (struct serverMessage*)rawBuffer;
         printf("Created server return \n");
+
+        fileSize = serverReturn->fileSize;
+        bytesReceived += serverReturn->bytesToUse;
 
         //printf("Data after processing:\n");
         //showBytes((byte_pointer)serverReturn->data, size_t(serverReturn->bytesToUse));
@@ -160,10 +169,10 @@ int client_requester (void) {
         printf("Data parameters \nFile size: %li \nPosition in file: %li\nBytes to use %i\n",
         serverReturn->fileSize, serverReturn->positionInFile, serverReturn->bytesToUse);
 
-        //if the server tells us that there is no more data to send, we break
-        if (serverReturn->bytesToUse == 0){
-          break;
-        }
+        // //if the server tells us that there is no more data to send, we break
+        // if (serverReturn->bytesToUse == 0){
+        //   break;
+        // }
 
         printf("Writing to file \n");
 
@@ -171,6 +180,10 @@ int client_requester (void) {
           printf("successfully wrote to %s\n", fileName.c_str());
         }else{
           printf("failed to write to file\n");
+        }
+        // when we have received the whole file, break out of the loop
+        if (bytesReceived >= fileSize) {
+          break;
         }
       }
     }
@@ -282,11 +295,13 @@ int client_connector (void) {
       }
     }
     // sleep for a bit before we try to connect again (so we don't clog up the network too much)
-    if (usleep(10000000) == -1)
+    //printf("sleeping\n");
+    if (usleep(1000000) == -1)
     {
       perror("usleep");
       // TODO: handle error
     }
+    //printf("done sleeping\n");
   }
 }
 

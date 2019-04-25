@@ -17,6 +17,8 @@
 
 using namespace std;
 
+// TODO: build in a way to quit!!!
+
 // TODO: eventually will need a way for the user to safely shut down the whole thing on their end
 // TODO: make a function to destroy resources when we have to quit due to an error
 // TODO: be careful to close connections when we need to. and stuff like that.
