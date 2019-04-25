@@ -214,7 +214,7 @@ int client_connector (void) {
       }
     }
     // sleep for a bit before we try to connect again (so we don't clog up the network too much)
-    if (usleep(2 * 10000000) == -1)
+    if (usleep(1000000) == -1)
     {
       perror("usleep");
       // TODO: handle error
@@ -241,7 +241,7 @@ int writeToFile(struct serverMessage* toWrite, string fileName){
  * Parameters:
  * - string filename: the name of the file to read
  * Returns: a vector of strings, where each is an IP address of a host that
- * might be running the program. 
+ * might be running the program.
  * ---------------------------------------------------------------------------*/
 vector<string> read_hosts(string filename) {
   ifstream file;
