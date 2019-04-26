@@ -242,7 +242,6 @@ int server_read (void) {
   struct timeval timeout;
   timeout.tv_sec = 5;
   timeout.tv_usec = 100000; // 100 milliseconds; WE MAY WANT TO CHANGE THIS
-  int sum = 1;
   while (1) {
     // clear out the file descriptor sets to ensure they are empty
     FD_ZERO(&server_readfds_copy);
@@ -294,12 +293,12 @@ int server_read (void) {
       for (int i = 0; i < server_fd_list.size(); i++)
       {
         if (FD_ISSET(server_fd_list[i], &server_readfds_copy) != 0) {
-          printf("got data from fd %i %d\n", server_fd_list[i], sum);
-          sum++;
+          printf("got data from fd %i\n", server_fd_list[i]);
+
           size_t requestSize = sizeof(clientMessage);
           char* buffer = new char[requestSize];
           memset(buffer, 0, sizeof(clientMessage));
-          int valRead = read(server_fd_list[i], buffer, sizeof(clientMessage));
+          int valRead = read(server_fd_list[i], buffer, sizeof(clientMessage)); // weird stuff is happening here
           if (valRead > 0){
 
             if (arrayCheck(buffer, (int)sizeof(clientMessage))){
@@ -318,10 +317,14 @@ int server_read (void) {
               printf("Null message recieved\n");
             }
             free(buffer);
-          }else{
-            // TODO: IF WE EXIT THE LOOP HERE, WE WILL NEED TO RELEASE THE LOCK
+          }
+          else{
+            // if we get here, the other side disconnected, so close this fd and remove it from our lists
+            close(server_fd_list[i]);
+            FD_CLR(server_fd_list[i], &server_readfds);
+            server_fd_list.erase(server_fd_list.begin() + i);
             free(buffer);
-            perror("read");
+            //perror("read");
           }
 
         }

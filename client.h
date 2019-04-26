@@ -100,6 +100,7 @@ int client_requester (void) {
     }
 
     valRead = read(client_fd_list[i], rawBuffer, sizeof(serverMessage));
+    printf("read1\n");
     if (valRead == -1){
       perror("read");
     }
@@ -149,6 +150,7 @@ int client_requester (void) {
 
         //Get the reply
         valRead = read(serversWithFile[i], rawBuffer, sizeof(serverMessage));
+        printf("read2\n");
         if (valRead == -1){
           perror("read");
         }
@@ -207,6 +209,7 @@ int client_requester (void) {
  * again later.
  * Parameters: none
  * Returns: nothing right now
+ // THIS DOES NOT ALWAYS WORK
  * ---------------------------------------------------------------------------*/
 int client_connector (void) {
   struct sockaddr_in address;
@@ -295,13 +298,11 @@ int client_connector (void) {
       }
     }
     // sleep for a bit before we try to connect again (so we don't clog up the network too much)
-    //printf("sleeping\n");
-    if (usleep(1000000) == -1)
+    if (usleep(100000) == -1)
     {
       perror("usleep");
       // TODO: handle error
     }
-    //printf("done sleeping\n");
   }
 }
 
