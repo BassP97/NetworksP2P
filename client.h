@@ -226,7 +226,7 @@ int client_connector (void) {
 
   struct timeval timeout;
   timeout.tv_sec = 0;
-  timeout.tv_usec = 100;
+  timeout.tv_usec = 10000;
 
   // read in the IP addresses of hosts that might be running the program
   host_list = read_hosts("hosts.txt");
@@ -245,8 +245,8 @@ int client_connector (void) {
   }
   strncpy(hostaddr, inet_ntoa(*((struct in_addr*)he->h_addr)), 16);
 
-  // while (1)
-  // {
+  while (1)
+  {
     for (int i = 0; i < host_list.size(); i++)
     {
       // if the ip address we're looking at is NOT the local one and we aren't already
@@ -271,13 +271,7 @@ int client_connector (void) {
         }
         // try to connect to the address
         int ret = connect(sock, (struct sockaddr *)&servAddr, sizeof(servAddr));
-        // int errsv = errno;
-        // if (errno == ECONNREFUSED)
-        // {
-        //   printf("HELLO\n");
-        // }
         if (ret < 0) {
-          // printf("closing socket\n");
           close(sock); // if it fails, close the socket so we can reuse the number
         }
         else {
@@ -311,45 +305,6 @@ int client_connector (void) {
     //   perror("usleep");
     //   // TODO: handle error
     // }
-  // }
-  while (1)
-  {
-    sock = socket(AF_INET, SOCK_STREAM, 0);
-
-    memset(&servAddr, '0', sizeof(servAddr));
-
-    servAddr.sin_family = AF_INET;
-    servAddr.sin_port = htons(PORT);
-
-    // wait for the server to tell us that someone new has connected
-    // ----------------------------------------------------------------------
-    if (pthread_mutex_lock(&signal_lock) == -1) {
-      perror("pthread_mutex_lock");
-    }
-    while (new_connections.size() == 0) {
-      pthread_cond_wait(&signal_var, &signal_lock);
-    }
-    string new_ip = new_connections.back();
-    new_connections.pop_back();
-    //Convert IPv4 addresses from text to binary form
-    inet_pton(AF_INET, new_ip.c_str(), &servAddr.sin_addr);
-    // cout << new_ip.c_str() << endl;
-    // try to connect to the address
-    // TODO: failing rn but figure it out later
-    if (connect(sock, (struct sockaddr *)&servAddr, sizeof(servAddr)) < 0) {
-      // printf("failed\n");
-      perror("connect");
-      close(sock); // if it fails, close the socket so we can reuse the number
-    }
-    else {
-      printf("successfully connected to %s\n", new_ip.c_str());
-    }
-    // do we need to signal the server again here?
-    if (pthread_mutex_unlock(&signal_lock) == -1)
-    {
-      perror("pthread_mutex_lock");
-    }
-    // ----------------------------------------------------------------------
   }
 }
 

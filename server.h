@@ -216,25 +216,6 @@ int server_listen(void) {
         perror("pthread_mutex_unlock");
         // TODO: handle the error
       }
-      // ----------------------------------------------------------------------
-      if (pthread_mutex_lock(&signal_lock) == -1)
-      {
-        perror("pthread_mutex_lock");
-        // TODO: do something here to handle the error
-      }
-      struct in_addr* ip_ptr = &(address.sin_addr);
-      char* new_ip;
-      new_ip = inet_ntoa(*ip_ptr);
-      string new_ip_str = new_ip;
-      new_connections.push_back(new_ip_str);
-      printf("sending a signal to the client\n");
-      pthread_cond_signal(&signal_var);
-      if (pthread_mutex_unlock(&signal_lock) == -1)
-      {
-        perror("pthread_mutex_lock");
-        // TODO: do something here to handle the error
-      }
-      // ----------------------------------------------------------------------
     }
 
   }
