@@ -42,6 +42,16 @@ int main(int argc,char *argv[]) {
     // TODO: do something here
   }
 
+  if (pthread_mutex_init(&signal_lock, NULL) == -1)
+  {
+    perror("pthread_mutex_init");
+  }
+
+  if (pthread_cond_init(&signal_var, NULL) == -1)
+  {
+    perror("pthread_cond_init");
+  }
+
   // ----------------------------------------------------------------------
   // ensure that the readfds fd_set is zeroed out
   if (pthread_mutex_lock(&server_readfd_lock) == -1)
@@ -125,7 +135,7 @@ int main(int argc,char *argv[]) {
     exit(-1);
   }
 
-  // destroy the lock
+  // destroy the locks & condition variables
   if (pthread_mutex_destroy(&server_readfd_lock) == -1)
   {
     perror("pthread_mutex_destroy");
@@ -133,6 +143,14 @@ int main(int argc,char *argv[]) {
   if (pthread_mutex_destroy(&client_fd_lock) == -1)
   {
     perror("pthread_mutex_destroy");
+  }
+  if (pthread_mutex_destroy(&signal_lock) == -1)
+  {
+    perror("pthread_mutex_destroy");
+  }
+  if (pthread_cond_destroy(&signal_var) == -1)
+  {
+    perror("pthread_cond_destroy");
   }
   pthread_exit(NULL);
 

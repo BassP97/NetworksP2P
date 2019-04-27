@@ -30,6 +30,11 @@ fd_set server_readfds; // global set of file descriptors for the reading server 
 pthread_mutex_t server_readfd_lock; // lock for server_readfds since it's global and accessed by multiple threads
 vector<int> server_fd_list; // list of currently active file descriptors
 
+// for signaling that there is a new variable
+pthread_mutex_t signal_lock;
+pthread_cond_t signal_var;
+vector<string> new_connections;
+
 void* start_server_listen(void* arg);
 void* start_server_read(void* arg);
 int server_listen(void);
@@ -169,7 +174,11 @@ int server_listen(void) {
 
   address.sin_port = htons(PORT);
 
-  setsockopt(serverFd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt));
+  //if (setsockopt(serverFd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)) < 0)
+  if (setsockopt(serverFd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0)
+  {
+    perror("setsockopt");
+  }
 
   // attach socket to the port
   if (::bind(serverFd, (struct sockaddr *)&address, sizeof(address)) == -1) {
@@ -186,29 +195,48 @@ int server_listen(void) {
   // loop, listening for new conections
   while (1)
   {
-    // TODO: dynamic ports for each connection? Do we need that?
     newSocket = accept(serverFd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
     if (newSocket == -1)
     {
       perror("accept");
     }
+    else {
+      // ----------------------------------------------------------------------
+      // get the lock and add it to the set of file descriptors to listen to
+      if (pthread_mutex_lock(&server_readfd_lock) == -1)
+      {
+        perror("pthread_mutex_lock");
+        // TODO: do something here to handle the error
+      }
+      FD_SET(newSocket, &server_readfds); // put the file descriptor in the set
+      //readfd_count++;
+      server_fd_list.push_back(newSocket);
+      if (pthread_mutex_unlock(&server_readfd_lock) == -1)
+      {
+        perror("pthread_mutex_unlock");
+        // TODO: handle the error
+      }
+      // ----------------------------------------------------------------------
+      if (pthread_mutex_lock(&signal_lock) == -1)
+      {
+        perror("pthread_mutex_lock");
+        // TODO: do something here to handle the error
+      }
+      struct in_addr* ip_ptr = &(address.sin_addr);
+      char* new_ip;
+      new_ip = inet_ntoa(*ip_ptr);
+      string new_ip_str = new_ip;
+      new_connections.push_back(new_ip_str);
+      printf("sending a signal to the client\n");
+      pthread_cond_signal(&signal_var);
+      if (pthread_mutex_unlock(&signal_lock) == -1)
+      {
+        perror("pthread_mutex_lock");
+        // TODO: do something here to handle the error
+      }
+      // ----------------------------------------------------------------------
+    }
 
-    // ----------------------------------------------------------------------
-    // get the lock and add it to the set of file descriptors to listen to
-    if (pthread_mutex_lock(&server_readfd_lock) == -1)
-    {
-      perror("pthread_mutex_lock");
-      // TODO: do something here to handle the error
-    }
-    FD_SET(newSocket, &server_readfds); // put the file descriptor in the set
-    //readfd_count++;
-    server_fd_list.push_back(newSocket);
-    if (pthread_mutex_unlock(&server_readfd_lock) == -1)
-    {
-      perror("pthread_mutex_unlock");
-      // TODO: handle the error
-    }
-    // ----------------------------------------------------------------------
   }
 
   return 0;
@@ -319,6 +347,7 @@ int server_read (void) {
             free(buffer);
           }
           else{
+            printf("other side is disconnected\n");
             // if we get here, the other side disconnected, so close this fd and remove it from our lists
             close(server_fd_list[i]);
             FD_CLR(server_fd_list[i], &server_readfds);
