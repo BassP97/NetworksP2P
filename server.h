@@ -30,11 +30,6 @@ fd_set server_readfds; // global set of file descriptors for the reading server 
 pthread_mutex_t server_readfd_lock; // lock for server_readfds since it's global and accessed by multiple threads
 vector<int> server_fd_list; // list of currently active file descriptors
 
-// // for signaling that there is a new variable
-// pthread_mutex_t signal_lock;
-// pthread_cond_t signal_var;
-// vector<string> new_connections;
-
 void* start_server_listen(void* arg);
 void* start_server_read(void* arg);
 int server_listen(void);
@@ -124,7 +119,7 @@ char* readFile(struct clientMessage* toRetrieve){
     printf("Unable to open file\n");
     exit(0);
   }
-  printf("file successfully opened \n");
+
   //get the total file size and set the position to the byte we have to read
   inFile.seekg(0, inFile.end);
   size = inFile.tellg();
@@ -136,11 +131,11 @@ char* readFile(struct clientMessage* toRetrieve){
   }else{
     length = size-(toRetrieve->portionToReturn*1024);  //if not, just send the rest of the file
   }
-  printf("file length assigned \n");
+
   inFile.read(toSend, length);
-  printf("sending data: \n");
-  showBytes((byte_pointer)toSend, (size_t)length);
-  printf("\n %lui \n", sizeof(toReturn->data));
+
+  // showBytes((byte_pointer)toSend, (size_t)length);
+
   memcpy(toReturn->data, toSend, length);
   toReturn->positionInFile = toRetrieve->portionToReturn;
   toReturn->bytesToUse = length;
@@ -234,7 +229,6 @@ int server_listen(void) {
  * Returns: nothing right now
  * ---------------------------------------------------------------------------*/
 int server_read (void) {
-  printf("server read\n");
   int ready;
 
   // initialize the other two FD sets that select() needs; they'll be empty
@@ -303,8 +297,6 @@ int server_read (void) {
       for (int i = 0; i < server_fd_list.size(); i++)
       {
         if (FD_ISSET(server_fd_list[i], &server_readfds_copy) != 0) {
-          printf("got data from fd %i\n", server_fd_list[i]);
-
           size_t requestSize = sizeof(clientMessage);
           char* buffer = new char[requestSize];
           memset(buffer, 0, sizeof(clientMessage));
@@ -314,8 +306,8 @@ int server_read (void) {
             if (arrayCheck(buffer, (int)sizeof(clientMessage))){
               struct clientMessage* toAccept = (struct clientMessage*)buffer;
 
-              printf("printing received message:\n");
-              printf("fileName requested: %s and returning starting at block %ld\n", toAccept->fileName, toAccept->portionToReturn);
+              // printf("printing received message:\n");
+              // printf("fileName requested: %s and returning starting at block %ld\n", toAccept->fileName, toAccept->portionToReturn);
 
               showBytes((byte_pointer)toAccept->fileName, sizeof(clientMessage));
               printf("\n");
@@ -329,7 +321,7 @@ int server_read (void) {
             free(buffer);
           }
           else{
-            printf("other side is disconnected\n");
+            // printf("other side is disconnected\n");
             // if we get here, the other side disconnected, so close this fd and remove it from our lists
             close(server_fd_list[i]);
             FD_CLR(server_fd_list[i], &server_readfds);

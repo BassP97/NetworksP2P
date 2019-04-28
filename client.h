@@ -74,9 +74,6 @@ int client_requester (void) {
   toRequest.portionToReturn = 0;
   toRequest.haveFile = 1;
 
-  printf("Requesting file with name %s\n",toRequest.fileName);
-  printf("Requesting block number %ld\n",toRequest.portionToReturn);
-
 
   message = (char*)&toRequest;
   showBytes((byte_pointer)message, sizeof(clientMessage));
@@ -111,12 +108,10 @@ int client_requester (void) {
       printf("File descriptor %i has the file\n", client_fd_list[i]);
     }
   }
-  printf("Done with gathering partners with file\n");
 
   if (pthread_mutex_unlock(&client_fd_lock) == -1){
     perror("pthread_mutex_unlock");
   }
-  printf("unlocking\n");
 
 
   //============================STAGE TWO==================================
@@ -157,34 +152,19 @@ int client_requester (void) {
 
         //Get the reply
         valRead = read(serversWithFile[i], rawBuffer, sizeof(serverMessage));
-        printf("read2\n");
         if (valRead == -1){
           perror("read");
         }
 
         //process the reply accordingly
-        // serverReturn = (struct serverMessage*)rawBuffer;
-        printf("Recieved data\n");
         //showBytes((byte_pointer)rawBuffer, sizeof(serverMessage));
         serverReturn = (struct serverMessage*)rawBuffer;
-        printf("Created server return \n");
 
         fileSize = serverReturn->fileSize;
         bytesReceived += serverReturn->bytesToUse;
-        printf("bytes received: %d\n", bytesReceived);
-
-        //printf("Data after processing:\n");
-        //showBytes((byte_pointer)serverReturn->data, size_t(serverReturn->bytesToUse));
 
         printf("Data parameters \nFile size: %li \nPosition in file: %li\nBytes to use %i\n",
         serverReturn->fileSize, serverReturn->positionInFile, serverReturn->bytesToUse);
-
-        // //if the server tells us that there is no more data to send, we break
-        // if (serverReturn->bytesToUse == 0){
-        //   break;
-        // }
-
-        printf("Writing to file \n");
 
         if(writeToFile(serverReturn, fileName, filePosition)){
           printf("successfully wrote to %s\n", fileName.c_str());
@@ -194,7 +174,6 @@ int client_requester (void) {
 
         // when we have received the whole file, break out of the loop
         if (bytesReceived >= fileSize) {
-          printf("breaking\n");
           break;
         }
         filePosition++;
