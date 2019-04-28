@@ -42,15 +42,15 @@ int main(int argc,char *argv[]) {
     // TODO: do something here
   }
 
-  if (pthread_mutex_init(&signal_lock, NULL) == -1)
-  {
-    perror("pthread_mutex_init");
-  }
-
-  if (pthread_cond_init(&signal_var, NULL) == -1)
-  {
-    perror("pthread_cond_init");
-  }
+  // if (pthread_mutex_init(&signal_lock, NULL) == -1)
+  // {
+  //   perror("pthread_mutex_init");
+  // }
+  //
+  // if (pthread_cond_init(&signal_var, NULL) == -1)
+  // {
+  //   perror("pthread_cond_init");
+  // }
 
   // ----------------------------------------------------------------------
   // ensure that the readfds fd_set is zeroed out
@@ -144,14 +144,14 @@ int main(int argc,char *argv[]) {
   {
     perror("pthread_mutex_destroy");
   }
-  if (pthread_mutex_destroy(&signal_lock) == -1)
-  {
-    perror("pthread_mutex_destroy");
-  }
-  if (pthread_cond_destroy(&signal_var) == -1)
-  {
-    perror("pthread_cond_destroy");
-  }
+  // if (pthread_mutex_destroy(&signal_lock) == -1)
+  // {
+  //   perror("pthread_mutex_destroy");
+  // }
+  // if (pthread_cond_destroy(&signal_var) == -1)
+  // {
+  //   perror("pthread_cond_destroy");
+  // }
   pthread_exit(NULL);
 
   return 0;

@@ -30,10 +30,10 @@ fd_set server_readfds; // global set of file descriptors for the reading server 
 pthread_mutex_t server_readfd_lock; // lock for server_readfds since it's global and accessed by multiple threads
 vector<int> server_fd_list; // list of currently active file descriptors
 
-// for signaling that there is a new variable
-pthread_mutex_t signal_lock;
-pthread_cond_t signal_var;
-vector<string> new_connections;
+// // for signaling that there is a new variable
+// pthread_mutex_t signal_lock;
+// pthread_cond_t signal_var;
+// vector<string> new_connections;
 
 void* start_server_listen(void* arg);
 void* start_server_read(void* arg);
@@ -111,6 +111,7 @@ char* readFile(struct clientMessage* toRetrieve){
   size_t size = 0;
   struct serverMessage* toReturn;
   toReturn = (struct serverMessage*)malloc(sizeof(struct serverMessage));
+  memset(toReturn, 0, sizeof(struct serverMessage));
 
   inFile.open(toRetrieve->fileName);
   if (!inFile && toRetrieve->haveFile == 1){

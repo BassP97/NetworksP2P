@@ -14,7 +14,7 @@ vector<string> connected_list;
 void* start_client_requester(void* arg);
 int client_requester(void);
 int client_connector(void);
-int writeToFile(struct serverMessage* toWrite, string fileName);
+int writeToFile(struct serverMessage* toWrite, string fileName, int filePosition);
 void showBytes(byte_pointer start, size_t len);
 vector<string> read_hosts(string filename);
 
@@ -129,15 +129,22 @@ int client_requester (void) {
   toRequest.haveFile = 0;
   int filePosition = 0;
 
-  long fileSize = -1;
-  long bytesReceived = 0;
+  long fileSize = 0;
+  long bytesReceived = -1;
+
+  // TODO: delete the file from one of the servers and see if everything works
+  // correctly. make sure it has the vector of only 2 servers
 
   if(serversWithFile.size()==0){
     printf("No servers have the file you requested. Double check for typos!\n");
   }else{
     printf("Pinging servers with the file you requested\n");
+    for (int i = 0; i < serversWithFile.size(); i++)
+    {
+      printf("%i\n", serversWithFile[i]);
+    }
     //while(serverReturn->bytesToUse!=0){
-    while (fileSize < bytesReceived) {
+    while (fileSize > bytesReceived) {
       for(int i = 0; i < serversWithFile.size(); i++){
         toRequest.portionToReturn = filePosition;
         message = (char*)&toRequest;
@@ -158,12 +165,13 @@ int client_requester (void) {
         //process the reply accordingly
         // serverReturn = (struct serverMessage*)rawBuffer;
         printf("Recieved data\n");
-        showBytes((byte_pointer)rawBuffer, sizeof(serverMessage));
+        //showBytes((byte_pointer)rawBuffer, sizeof(serverMessage));
         serverReturn = (struct serverMessage*)rawBuffer;
         printf("Created server return \n");
 
         fileSize = serverReturn->fileSize;
         bytesReceived += serverReturn->bytesToUse;
+        printf("bytes received: %d\n", bytesReceived);
 
         //printf("Data after processing:\n");
         //showBytes((byte_pointer)serverReturn->data, size_t(serverReturn->bytesToUse));
@@ -178,15 +186,18 @@ int client_requester (void) {
 
         printf("Writing to file \n");
 
-        if(writeToFile(serverReturn, fileName)){
+        if(writeToFile(serverReturn, fileName, filePosition)){
           printf("successfully wrote to %s\n", fileName.c_str());
         }else{
           printf("failed to write to file\n");
         }
+
         // when we have received the whole file, break out of the loop
         if (bytesReceived >= fileSize) {
+          printf("breaking\n");
           break;
         }
+        filePosition++;
       }
     }
   }
@@ -308,14 +319,25 @@ int client_connector (void) {
   }
 }
 
-int writeToFile(struct serverMessage* toWrite, string fileName){
+int writeToFile(struct serverMessage* toWrite, string fileName, int filePosition){
   if(access( fileName.c_str(), F_OK ) == -1){
-    ofstream writeFile(fileName, ios::out | ios::binary);
-    if(writeFile.write(toWrite->data, toWrite->bytesToUse)){
+    ofstream writeFile(fileName, ofstream::out | ofstream::binary);
+    if(writeFile.write(toWrite->data, toWrite->bytesToUse)) {
         return 1;
-    }else{
+    } else {
       return -1;
     }
+    writeFile.close();
+  }
+  else {
+    ofstream writeFile;
+    writeFile.open(fileName, ofstream::out | ofstream::binary | ofstream::app);
+    if(writeFile.write(toWrite->data, toWrite->bytesToUse)) {
+        return 1;
+    } else {
+      return -1;
+    }
+    writeFile.close();
   }
   return 1;
 }
