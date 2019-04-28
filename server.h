@@ -7,6 +7,9 @@
 
 using namespace std;
 
+// TODO: ADD AN ERROR MESSAGE FOR A SITUATION WHERE THE SERVER GETS A REQUEST
+// FOR A FILE THAT IT DOES NOT HAVE
+
 /*
 Paul's notes to self:
 Client needs a way to know when it is finished recieving data so it stops

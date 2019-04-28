@@ -14,7 +14,7 @@ vector<string> connected_list;
 void* start_client_requester(void* arg);
 int client_requester(void);
 int client_connector(void);
-int writeToFile(struct serverMessage* toWrite, string fileName, int filePosition);
+int writeToFile(struct serverMessage* toWrite, string fileName);
 void showBytes(byte_pointer start, size_t len);
 vector<string> read_hosts(string filename);
 
@@ -166,7 +166,7 @@ int client_requester (void) {
         printf("Data parameters \nFile size: %li \nPosition in file: %li\nBytes to use %i\n",
         serverReturn->fileSize, serverReturn->positionInFile, serverReturn->bytesToUse);
 
-        if(writeToFile(serverReturn, fileName, filePosition)){
+        if(writeToFile(serverReturn, fileName)){
           printf("successfully wrote to %s\n", fileName.c_str());
         }else{
           printf("failed to write to file\n");
@@ -298,7 +298,7 @@ int client_connector (void) {
   }
 }
 
-int writeToFile(struct serverMessage* toWrite, string fileName, int filePosition){
+int writeToFile(struct serverMessage* toWrite, string fileName){
   if(access( fileName.c_str(), F_OK ) == -1){
     ofstream writeFile(fileName, ofstream::out | ofstream::binary);
     if(writeFile.write(toWrite->data, toWrite->bytesToUse)) {
