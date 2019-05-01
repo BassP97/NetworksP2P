@@ -1,6 +1,7 @@
 #ifndef CLIENT_H
 #define CLIENT_H
 
+#include <map>
 #include "server.h"
 typedef unsigned char *byte_pointer;
 #define PORT 8080
@@ -57,14 +58,16 @@ int client_requester (void) {
   string fileName;
   char* message;
   int sock = 0, valRead;
-  //changed message to 128 to match max file name
+  //Raw buffer holds the raw bytes that recv gives us later on in the program
   char rawBuffer[sizeof(serverMessage)];
+  //Raw buffer will be cast directly to server return, making it easier for us to parse
   struct serverMessage* serverReturn;
 
   // request a file from the server
   printf("Type in a filename to request from the server\n");
   cin >> fileName;
-  //conver the file name to a cstring
+
+  //convert the file name to a cstring
   char* fileNameArr = new char[fileName.length()+1];
   strcpy(fileNameArr, fileName.c_str());
 
@@ -76,18 +79,20 @@ int client_requester (void) {
 
 
   message = (char*)&toRequest;
-  //showBytes((byte_pointer)message, sizeof(clientMessage));
-  //printf("\n");
-  //showBytes((byte_pointer)&toRequest, sizeof(clientMessage));
 
   //============================STAGE ONE==================================
   //Identify which servers have the file we want
   vector<int> serversWithFile;
   int sent;
   long fileSize = 0;
+
   if (pthread_mutex_lock(&client_fd_lock) == -1){
     perror("pthread_mutex_lock");
   }
+
+  //We iterate through all current active connections and send them a message
+  //asking if they have a file - if yes we append them to our "servers with file"
+  //vector. This is also where we get the total file size of the file we are requesting
   for(int i = 0; i<client_fd_list.size(); i++){
     sent = send(client_fd_list[i], message, sizeof(clientMessage), 0);
     if (sent == -1) {
@@ -106,19 +111,26 @@ int client_requester (void) {
       printf("File descriptor %i has the file\n", client_fd_list[i]);
     }
   }
+
   if (pthread_mutex_unlock(&client_fd_lock) == -1){
     perror("pthread_mutex_unlock");
   }
+
   usleep(1000000);
 
 
   //============================STAGE TWO==================================
   //Iterate through the list of servers with the file, getting the file bit by
   //bit from each of them in turn
+
+  //Ensure that the raw buffer is empty if we are getting < 1kb of information
   memset(rawBuffer, 0, sizeof(serverMessage));
+
   if(serverReturn!=NULL){
     serverReturn->bytesToUse = 1;
   }
+
+  //initial variable set up
   int filePortion = 0;
   toRequest.portionToReturn = 0;
   toRequest.haveFile = 0;
@@ -126,20 +138,22 @@ int client_requester (void) {
   long bytesReceived = -1;
   printf("Done setting up\n");
 
-  // TODO: delete the file from one of the servers and see if everything works
-  // correctly. make sure it has the vector of only 2 servers
-
+  //check if any servers have our file - if not don't even bother sending more messages
   if(serversWithFile.size()==0){
     printf("No servers have the file you requested. Double check for typos!\n");
   }else{
-
     fd_set readFDSet;
+
+    //This map tracks if we have recieved a response for some portion of the file
+    //The key is an integer (from 1 to n where N is the final Nth kilobyte of the file)
+    std::map<int,bool> portionCheck;
     int selectVal;
     struct timeval timeoutPeriod;
     struct sockaddr_in timeoutAddr;
     filePosition = 0;
     socklen_t timeoutAddrSize = sizeof(struct sockaddr_in);
     int res;
+    int sentMessages;
 
     timeoutPeriod.tv_sec = 10;
     timeoutPeriod.tv_usec = 0;
@@ -147,27 +161,35 @@ int client_requester (void) {
     printf("Pinging servers with the file you requested\n\n");
 
     while (fileSize > bytesReceived){
-      //Send all the requests in this round
+      //Send requests to every server with the file - we do this in "rounds" where
+      //every server with the file gets one request per round
       for(int i = 0; i < serversWithFile.size(); i++){
+
+        //if there isn't any more to read, then simply stop sending requests
+        if (filePosition*1024 > fileSize){
+          break;
+        }
+
         toRequest.portionToReturn = filePosition;
+        portionCheck[filePosition] = false;
         filePosition++;
+
+        //cast our message to a pointer
         message = (char*)&toRequest;
-        //showBytes((byte_pointer)message, sizeof(clientMessage));
-        //printf("Sending file descriptor %i\n", serversWithFile[i]);
         int sent = send(serversWithFile[i], message, sizeof(clientMessage), 0);
+        sentMessages++;
         if (sent == -1) {
           perror("send");
         }
       }
 
-      //Get the replies
-      for(int i = 0; i < serversWithFile.size(); i++){
+      //Get the replies from this round of messages
+      for(int i = 0; i < sentMessages; i++){
 
-        //have to reinitialize because select alters the FD set
+        //have to reinitialize our file descriptor set every loop because select alters the FD set
         FD_ZERO(&readFDSet);
         int largestFD = 1;
         for(int i = 0; i < serversWithFile.size(); i++){
-          //printf("currently adding file descriptor number %i to set\n",serversWithFile[i]);
           FD_SET(serversWithFile[i], &readFDSet);
           if(serversWithFile[i]>largestFD){
             largestFD = serversWithFile[i]+1;
@@ -176,12 +198,13 @@ int client_requester (void) {
         printf("Selecting\n");
         selectVal = select(largestFD, &readFDSet, NULL, NULL, &timeoutPeriod);
 
-        //we have timed out
+        //if select returns 0 then we have timed out
         if (selectVal == 0){
           printf("Timeout occured\n");
           //handle timeouts here
         }else{
           //if we haven't time out, figure out which connection has data and proceed to read from it
+          //We determine which connection has data by checking which file descriptor is currently set
           for(int j = 0; j < serversWithFile.size(); j++){
             if (FD_ISSET(serversWithFile[i], &readFDSet)){
               valRead = recv(serversWithFile[i], rawBuffer, sizeof(serverMessage), 0);
@@ -192,18 +215,21 @@ int client_requester (void) {
               break;
             }
           }
-        }
+          //Cast our raw return bytes to a server message and print out the contents to debug
+          serverReturn = (struct serverMessage*)rawBuffer;
+          printf("\n\nData parameters \nFile size: %li \nPosition in file: %li\nBytes to use %i\nOverflow status (should always be 0):%i\n",
+          serverReturn->fileSize, serverReturn->positionInFile, serverReturn->bytesToUse, serverReturn->overflow);
 
-        serverReturn = (struct serverMessage*)rawBuffer;
-        printf("\n\nData parameters \nFile size: %li \nPosition in file: %li\nBytes to use %i\nOverflow status (should always be 0):%i\n",
-        serverReturn->fileSize, serverReturn->positionInFile, serverReturn->bytesToUse, serverReturn->overflow);
-
-        if(serverReturn->overflow == 0){
-          bytesReceived += serverReturn->bytesToUse;
-          if(writeToFile(serverReturn, fileName)){
-            printf("successfully wrote to %s\n", fileName.c_str());
-          }else{
-            printf("failed to write to file\n");
+          //If we have already recieved the message (ie portioncheck contains true for this message)
+          //then ignore it. Else, make sure the overflow flag isn't set and write it to the file
+          if(serverReturn->overflow == 0 && !portionCheck[serverReturn->positionInFile]){
+            portionCheck[serverReturn->positionInFile] = true;
+            bytesReceived += serverReturn->bytesToUse;
+            if(writeToFile(serverReturn, fileName)){
+              printf("successfully wrote to %s\n", fileName.c_str());
+            }else{
+              printf("failed to write to file\n");
+            }
           }
         }
 
@@ -344,6 +370,12 @@ int writeToFile(struct serverMessage* toWrite, string fileName){
     } else {
       return -1;
     }
+    writeFile.seekp(toWrite->positionInFile*1024, ios::beg);
+    if(writeFile.write(toWrite->data, toWrite->bytesToUse)) {
+        return 1;
+    } else {
+      return -1;
+    }
     writeFile.close();
   }
 
@@ -352,11 +384,7 @@ int writeToFile(struct serverMessage* toWrite, string fileName){
     printf("File does exist\n");
     ofstream writeFile;
     writeFile.open(fileName, ofstream::out | ofstream::binary);
-    printf("Open check\n");
-
     writeFile.seekp(toWrite->positionInFile*1024, ios::beg);
-      printf("Seekp check\n");
-
     if(writeFile.write(toWrite->data, toWrite->bytesToUse)) {
         return 1;
     } else {
