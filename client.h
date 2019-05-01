@@ -189,7 +189,6 @@ int client_requester (void) {
           //if we haven't time out, figure out which connection has data and proceed to read from it
           for(int j = 0; j < serversWithFile.size(); j++){
             if (FD_ISSET(serversWithFile[i], &readFDSet)){
-
               valRead = recv(serversWithFile[i], rawBuffer, sizeof(serverMessage), 0);
               if (valRead == -1){
                 printf("An error occured when recieving data\n");
@@ -201,16 +200,18 @@ int client_requester (void) {
         }
 
         serverReturn = (struct serverMessage*)rawBuffer;
-        fileSize = serverReturn->fileSize;
-        bytesReceived += serverReturn->bytesToUse;
+        if(serverReturn->overflow == 0){
+          fileSize = serverReturn->fileSize;
+          bytesReceived += serverReturn->bytesToUse;
 
-        printf("\n\nData parameters \nFile size: %li \nPosition in file: %li\nBytes to use %i\n\n",
-        serverReturn->fileSize, serverReturn->positionInFile, serverReturn->bytesToUse);
+          printf("\n\nData parameters \nFile size: %li \nPosition in file: %li\nBytes to use %i\n Overflow status (should always be 0):%i\n",
+          serverReturn->fileSize, serverReturn->positionInFile, serverReturn->bytesToUse, serverReturn->overflow);
 
-        if(writeToFile(serverReturn, fileName)){
-          printf("successfully wrote to %s\n", fileName.c_str());
-        }else{
-          printf("failed to write to file\n");
+          if(writeToFile(serverReturn, fileName)){
+            printf("successfully wrote to %s\n", fileName.c_str());
+          }else{
+            printf("failed to write to file\n");
+          }
         }
 
         // when we have received the whole file, break out of the loop

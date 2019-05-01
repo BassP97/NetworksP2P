@@ -32,6 +32,7 @@ struct serverMessage{
   long fileSize;        //file size in bytes
   char data[1024];      //actual data we are returning
   char hasFile;         //Updated if haveFile in the client message is 1 - has value 1 if we have file, 0 if not
+  char overflow;        //1 if the portion requested is out of range, 0 otherwise
 }serverMessage;
 
 struct clientMessage{
@@ -102,6 +103,7 @@ char* readFile(struct clientMessage* toRetrieve){
     toReturn->bytesToUse = length;
     toReturn->fileSize = (long)size;
     toReturn->hasFile = 0;
+    toReturn->overflow = 0;
     return((char*)toReturn);
   }else if(!inFile){
     printf("Unable to open file\n");
@@ -114,16 +116,18 @@ char* readFile(struct clientMessage* toRetrieve){
   inFile.seekg(toRetrieve->portionToReturn*1024);
 
   //if there are less than 1024 bytes left in the file to read
-  if (size-(toRetrieve->portionToReturn*1024) > sizeof(toSend)){
-    length = sizeof(toSend);                              //we have a kilobyte to send, so send a full kilobyte
+  if (size - (toRetrieve->portionToReturn*1024) <=0){
+    length = 0;
+    toReturn->overflow = 1;
+  }else if (size-(toRetrieve->portionToReturn*1024) > sizeof(toSend)){
+    length = sizeof(toSend);
+    toReturn->overflow = 1;
   }else{
     length = size-(toRetrieve->portionToReturn*1024);  //if not, just send the rest of the file
+    toReturn->overflow = 1;
   }
 
   inFile.read(toSend, length);
-
-  // showBytes((byte_pointer)toSend, (size_t)length);
-
   memcpy(toReturn->data, toSend, length);
   toReturn->positionInFile = toRetrieve->portionToReturn;
   toReturn->bytesToUse = length;
