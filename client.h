@@ -153,7 +153,7 @@ int client_requester (void) {
         filePosition++;
         message = (char*)&toRequest;
         //showBytes((byte_pointer)message, sizeof(clientMessage));
-        //printf("Sending file descriptor %i\n", serversWithFile[i]);
+        // this IS happening repeatedly where it should not
         int sent = send(serversWithFile[i], message, sizeof(clientMessage), 0);
         if (sent == -1) {
           perror("send");
@@ -161,57 +161,58 @@ int client_requester (void) {
       }
 
       //Get the replies
-      for(int i = 0; i < serversWithFile.size(); i++){
-
+      for (int i = 0; i < serversWithFile.size(); i++) {
         //have to reinitialize because select alters the FD set
         FD_ZERO(&readFDSet);
         int largestFD = 1;
-        for(int i = 0; i < serversWithFile.size(); i++){
-          //printf("currently adding file descriptor number %i to set\n",serversWithFile[i]);
-          FD_SET(serversWithFile[i], &readFDSet);
-          if(serversWithFile[i]>largestFD){
-            largestFD = serversWithFile[i]+1;
+        for(int j = 0; j < serversWithFile.size(); j++){
+          FD_SET(serversWithFile[j], &readFDSet);
+          if(serversWithFile[j]>largestFD){
+            largestFD = serversWithFile[j]+1;
           }
         }
-        printf("Selecting\n");
+        // printf("Selecting\n");
         selectVal = select(largestFD, &readFDSet, NULL, NULL, &timeoutPeriod);
 
         //we have timed out
         if (selectVal == 0){
           printf("Timeout occured\n");
           //handle timeouts here
-        }else{
+        }else{ // TODO: MULTIPLE CONNECTIONS MIGHT HAVE DATA COME IN AT THE SAME TIME!!
           //if we haven't time out, figure out which connection has data and proceed to read from it
           for(int j = 0; j < serversWithFile.size(); j++){
             if (FD_ISSET(serversWithFile[i], &readFDSet)){
               valRead = recv(serversWithFile[i], rawBuffer, sizeof(serverMessage), 0);
               if (valRead == -1){
-                printf("An error occured when recieving data\n");
                 perror("read");
               }
-              break;
+              serverReturn = (struct serverMessage*)rawBuffer;
+              printf("\n\nData parameters \nFile size: %li \nPosition in file: %li\nBytes to use %i\nOut of range status (should always be 0):%i\n",
+              serverReturn->fileSize, serverReturn->positionInFile, serverReturn->bytesToUse, serverReturn->outOfRange);
+
+              if(serverReturn->outOfRange == 0){
+                bytesReceived += serverReturn->bytesToUse;
+                if(writeToFile(serverReturn, fileName)){
+                  printf("successfully wrote to %s\n", fileName.c_str());
+                }else{
+                  printf("failed to write to file\n");
+                  break;
+                }
+              }
+              else {
+                bytesReceived = fileSize+1; // break out
+                break;
+              }
+
+              // when we have received the whole file, break out of the loop
+              if (bytesReceived >= fileSize) {
+                break;
+              }
             }
           }
         }
 
-        serverReturn = (struct serverMessage*)rawBuffer;
-        printf("\n\nData parameters \nFile size: %li \nPosition in file: %li\nBytes to use %i\nOverflow status (should always be 0):%i\n",
-        serverReturn->fileSize, serverReturn->positionInFile, serverReturn->bytesToUse, serverReturn->overflow);
 
-        if(serverReturn->overflow == 0){
-          bytesReceived += serverReturn->bytesToUse;
-          if(writeToFile(serverReturn, fileName)){
-            printf("successfully wrote to %s\n", fileName.c_str());
-          }else{
-            printf("failed to write to file\n");
-          }
-        }
-
-        // when we have received the whole file, break out of the loop
-        if (bytesReceived >= fileSize) {
-          break;
-          printf("Breaking\n");
-        }
       }
     }
     printf("Got whole file of file size %li and got %li many bytes\n", fileSize, bytesReceived);
@@ -333,13 +334,15 @@ int writeToFile(struct serverMessage* toWrite, string fileName){
   printf("Writing to file\n");
   //File does not exist
   if(access( fileName.c_str(), F_OK ) == -1){
-    printf("File doesn't exist\n");
-    printf("Pre-write file\n");
     ofstream writeFile(fileName, ofstream::out | ofstream::binary);
     char *writeVal;
-    printf("Pre-Calloc\n");
     writeVal = (char*)calloc(toWrite->fileSize, sizeof(char));
-    if(writeFile.write(writeVal, toWrite->fileSize)){
+    // write a bunch of 0's to the file to make it big enough
+    if(!writeFile.write(writeVal, toWrite->fileSize)){
+      return -1;
+    }
+    // write the actual data to the file
+    if(writeFile.write(toWrite->data, toWrite->bytesToUse)) {
         return 1;
     } else {
       return -1;
