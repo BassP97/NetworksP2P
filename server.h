@@ -92,12 +92,14 @@ char* readFile(struct clientMessage* toRetrieve){
   char toSend[1024];
   size_t startLocation;
   size_t length;
-  size_t size = 0;
+  long size = 0;
   struct serverMessage* toReturn;
   toReturn = (struct serverMessage*)malloc(sizeof(struct serverMessage));
   memset(toReturn, 0, sizeof(struct serverMessage));
 
   inFile.open(toRetrieve->fileName);
+  // if we have the file but can't open it, set the parameters of the message
+  // correctly and tell the client
   if (!inFile && toRetrieve->haveFile == 1){
     toReturn->positionInFile = toRetrieve->portionToReturn;
     toReturn->bytesToUse = length;
@@ -107,7 +109,7 @@ char* readFile(struct clientMessage* toRetrieve){
     return((char*)toReturn);
   }else if(!inFile){
     printf("Unable to open file\n");
-    exit(0);
+    exit(0); // TODO: THIS IS NOT WHAT WE SHOULD DO HERE
   }
 
   //get the total file size and set the position to the byte we have to read
@@ -116,13 +118,16 @@ char* readFile(struct clientMessage* toRetrieve){
   inFile.seekg(toRetrieve->portionToReturn*1024);
 
   //if there are less than 1024 bytes left in the file to read
-  if (size - (toRetrieve->portionToReturn*1024) <=0){
+  if (size - (toRetrieve->portionToReturn*1024) <= 0){
+    printf("out of range\n");
     length = 0;
     toReturn->overflow = 1;
   }else if (size-(toRetrieve->portionToReturn*1024) > sizeof(toSend)){
+    printf("lots left\n");
     length = sizeof(toSend);
     toReturn->overflow = 0;
   }else{
+    printf("sending the rest of the file\n");
     length = size-(toRetrieve->portionToReturn*1024);  //if not, just send the rest of the file
     toReturn->overflow = 0;
   }
@@ -304,7 +309,6 @@ int server_read (void) {
               //showBytes((byte_pointer)toAccept->fileName, sizeof(clientMessage));
               printf("\n");
               //showBytes((byte_pointer)buffer, sizeof(clientMessage));
-
               char* toReturn = readFile(toAccept);
               send(server_fd_list[i], toReturn, sizeof(serverMessage), 0);
             }else{
