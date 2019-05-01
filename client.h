@@ -143,7 +143,7 @@ int client_requester (void) {
     socklen_t timeoutAddrSize = sizeof(struct sockaddr_in);
     int res;
 
-    timeoutPeriod.tv_sec = 1;
+    timeoutPeriod.tv_sec = 10;
     timeoutPeriod.tv_usec = 0;
 
     printf("Pinging servers with the file you requested\n\n");
@@ -163,6 +163,7 @@ int client_requester (void) {
           perror("send");
         }
       }
+      printf("Round done\n");
 
       //Get the replies
       //this is probably where the insufficient size thing is -
@@ -178,7 +179,7 @@ int client_requester (void) {
             largestFD = serversWithFile[i]+1;
           }
         }
-
+        printf("Selecting\n");
         selectVal = select(largestFD, &readFDSet, NULL, NULL, &timeoutPeriod);
 
         //we have timed out
@@ -200,13 +201,12 @@ int client_requester (void) {
         }
 
         serverReturn = (struct serverMessage*)rawBuffer;
+        printf("\n\nData parameters \nFile size: %li \nPosition in file: %li\nBytes to use %i\nOverflow status (should always be 0):%i\n",
+        serverReturn->fileSize, serverReturn->positionInFile, serverReturn->bytesToUse, serverReturn->overflow);
+
         if(serverReturn->overflow == 0){
           fileSize = serverReturn->fileSize;
           bytesReceived += serverReturn->bytesToUse;
-
-          printf("\n\nData parameters \nFile size: %li \nPosition in file: %li\nBytes to use %i\n Overflow status (should always be 0):%i\n",
-          serverReturn->fileSize, serverReturn->positionInFile, serverReturn->bytesToUse, serverReturn->overflow);
-
           if(writeToFile(serverReturn, fileName)){
             printf("successfully wrote to %s\n", fileName.c_str());
           }else{

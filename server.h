@@ -121,10 +121,10 @@ char* readFile(struct clientMessage* toRetrieve){
     toReturn->overflow = 1;
   }else if (size-(toRetrieve->portionToReturn*1024) > sizeof(toSend)){
     length = sizeof(toSend);
-    toReturn->overflow = 1;
+    toReturn->overflow = 0;
   }else{
     length = size-(toRetrieve->portionToReturn*1024);  //if not, just send the rest of the file
-    toReturn->overflow = 1;
+    toReturn->overflow = 0;
   }
 
   inFile.read(toSend, length);
