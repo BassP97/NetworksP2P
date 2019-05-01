@@ -10,21 +10,6 @@ using namespace std;
 // TODO: ADD AN ERROR MESSAGE FOR A SITUATION WHERE THE SERVER GETS A REQUEST
 // FOR A FILE THAT IT DOES NOT HAVE
 
-/*
-Paul's notes to self:
-Client needs a way to know when it is finished recieving data so it stops
-requesting - solution: server needs to return file size when it sends the first
-packet of the transmission - add a file size parameter to serverMessage
-
-lock notes:
-use lock around code that uses client_fd_list to avoid race conditions
-
-broad strokes notes for 4/25:
-- initial broadcast to all peers asking if they have a file
-- Handing recieving different parts of a file and adding them
-  - keep file open until we've recieved whole thing - add elements as we recieve
-    them from the server
-*/
 typedef unsigned char *byte_pointer;
 
 # define PORT 8080 // the port that the server listens for new connections on
@@ -305,7 +290,6 @@ int server_read (void) {
           memset(buffer, 0, sizeof(clientMessage));
           int valRead = read(server_fd_list[i], buffer, sizeof(clientMessage)); // weird stuff is happening here
           if (valRead > 0){
-
             if (arrayCheck(buffer, (int)sizeof(clientMessage))){
               struct clientMessage* toAccept = (struct clientMessage*)buffer;
 

@@ -76,28 +76,24 @@ int client_requester (void) {
 
 
   message = (char*)&toRequest;
-  showBytes((byte_pointer)message, sizeof(clientMessage));
-  printf("\n");
-  showBytes((byte_pointer)&toRequest, sizeof(clientMessage));
-
-  if (pthread_mutex_lock(&client_fd_lock) == -1){
-    perror("pthread_mutex_lock");
-  }
+  //showBytes((byte_pointer)message, sizeof(clientMessage));
+  //printf("\n");
+  //showBytes((byte_pointer)&toRequest, sizeof(clientMessage));
 
   //============================STAGE ONE==================================
   //Identify which servers have the file we want
   vector<int> serversWithFile;
   int sent;
-
+  if (pthread_mutex_lock(&client_fd_lock) == -1){
+    perror("pthread_mutex_lock");
+  }
   for(int i = 0; i<client_fd_list.size(); i++){
-
     sent = send(client_fd_list[i], message, sizeof(clientMessage), 0);
     if (sent == -1) {
       perror("send");
     }
 
     valRead = read(client_fd_list[i], rawBuffer, sizeof(serverMessage));
-    printf("read1\n");
     if (valRead == -1){
       perror("read");
     }
@@ -108,24 +104,29 @@ int client_requester (void) {
       printf("File descriptor %i has the file\n", client_fd_list[i]);
     }
   }
-
   if (pthread_mutex_unlock(&client_fd_lock) == -1){
     perror("pthread_mutex_unlock");
   }
+  usleep(1000000);
 
 
   //============================STAGE TWO==================================
   //Iterate through the list of servers with the file, getting the file bit by
   //bit from each of them in turn
   memset(rawBuffer, 0, sizeof(serverMessage));
-  serverReturn->bytesToUse = 1;
+  if(serverReturn!=NULL){
+    serverReturn->bytesToUse = 1;
+  }
+
   int filePortion = 0;
   toRequest.portionToReturn = 0;
   toRequest.haveFile = 0;
+
   int filePosition = 0;
 
   long fileSize = 0;
   long bytesReceived = -1;
+  printf("Done setting up\n");
 
   // TODO: delete the file from one of the servers and see if everything works
   // correctly. make sure it has the vector of only 2 servers
@@ -133,37 +134,77 @@ int client_requester (void) {
   if(serversWithFile.size()==0){
     printf("No servers have the file you requested. Double check for typos!\n");
   }else{
-    printf("Pinging servers with the file you requested\n");
-    for (int i = 0; i < serversWithFile.size(); i++)
-    {
-      printf("%i\n", serversWithFile[i]);
-    }
-    //while(serverReturn->bytesToUse!=0){
-    while (fileSize > bytesReceived) {
+
+    fd_set readFDSet;
+    int selectVal;
+    struct timeval timeoutPeriod;
+    struct sockaddr_in timeoutAddr;
+    filePosition = 0;
+    socklen_t timeoutAddrSize = sizeof(struct sockaddr_in);
+    int res;
+
+    timeoutPeriod.tv_sec = 1;
+    timeoutPeriod.tv_usec = 0;
+
+    printf("Pinging servers with the file you requested\n\n");
+
+    while (fileSize > bytesReceived){
+      //Send all the requests in this round
       for(int i = 0; i < serversWithFile.size(); i++){
         toRequest.portionToReturn = filePosition;
-        message = (char*)&toRequest;
+        printf("Request Data portion to return: %li \n", toRequest.portionToReturn);
 
-        //send the request
+        filePosition++;
+        message = (char*)&toRequest;
+        //showBytes((byte_pointer)message, sizeof(clientMessage));
+        //printf("Sending file descriptor %i\n", serversWithFile[i]);
         int sent = send(serversWithFile[i], message, sizeof(clientMessage), 0);
         if (sent == -1) {
           perror("send");
         }
+      }
 
-        //Get the reply
-        valRead = read(serversWithFile[i], rawBuffer, sizeof(serverMessage));
-        if (valRead == -1){
-          perror("read");
+      //Get the replies
+      //this is probably where the insufficient size thing is -
+      for(int i = 0; i < serversWithFile.size(); i++){
+
+        //have to reinitialize because select alters the FD set
+        FD_ZERO(&readFDSet);
+        int largestFD = 1;
+        for(int i = 0; i < serversWithFile.size(); i++){
+          //printf("currently adding file descriptor number %i to set\n",serversWithFile[i]);
+          FD_SET(serversWithFile[i], &readFDSet);
+          if(serversWithFile[i]>largestFD){
+            largestFD = serversWithFile[i]+1;
+          }
         }
 
-        //process the reply accordingly
-        //showBytes((byte_pointer)rawBuffer, sizeof(serverMessage));
-        serverReturn = (struct serverMessage*)rawBuffer;
+        selectVal = select(largestFD, &readFDSet, NULL, NULL, &timeoutPeriod);
 
+        //we have timed out
+        if (selectVal == 0){
+          printf("Timeout occured\n");
+          //handle timeouts here
+        }else{
+          //if we haven't time out, figure out which connection has data and proceed to read from it
+          for(int j = 0; j < serversWithFile.size(); j++){
+            if (FD_ISSET(serversWithFile[i], &readFDSet)){
+
+              valRead = recv(serversWithFile[i], rawBuffer, sizeof(serverMessage), 0);
+              if (valRead == -1){
+                printf("An error occured when recieving data\n");
+                perror("read");
+              }
+              break;
+            }
+          }
+        }
+
+        serverReturn = (struct serverMessage*)rawBuffer;
         fileSize = serverReturn->fileSize;
         bytesReceived += serverReturn->bytesToUse;
 
-        printf("Data parameters \nFile size: %li \nPosition in file: %li\nBytes to use %i\n",
+        printf("\n\nData parameters \nFile size: %li \nPosition in file: %li\nBytes to use %i\n\n",
         serverReturn->fileSize, serverReturn->positionInFile, serverReturn->bytesToUse);
 
         if(writeToFile(serverReturn, fileName)){
@@ -176,7 +217,6 @@ int client_requester (void) {
         if (bytesReceived >= fileSize) {
           break;
         }
-        filePosition++;
       }
     }
   }
@@ -202,6 +242,7 @@ int client_requester (void) {
  // THIS DOES NOT ALWAYS WORK
  * ---------------------------------------------------------------------------*/
 int client_connector (void) {
+  printf("Starting client connector\n");
   struct sockaddr_in address;
   int sock;
   fd_set readSet, writeSet;
@@ -289,28 +330,37 @@ int client_connector (void) {
         }
       }
     }
-    // // sleep for a bit before we try to connect again (so we don't clog up the network too much)
-    // if (usleep(100000) == -1)
-    // {
-    //   perror("usleep");
-    //   // TODO: handle error
-    // }
   }
 }
 
 int writeToFile(struct serverMessage* toWrite, string fileName){
+  printf("Writing to file\n");
+  //File does not exist
   if(access( fileName.c_str(), F_OK ) == -1){
+    printf("File doesn't exist\n");
+    printf("Pre-write file\n");
     ofstream writeFile(fileName, ofstream::out | ofstream::binary);
-    if(writeFile.write(toWrite->data, toWrite->bytesToUse)) {
+    char *writeVal;
+    printf("Pre-Calloc\n");
+    writeVal = (char*)calloc(toWrite->fileSize, sizeof(char));
+    if(writeFile.write(writeVal, toWrite->fileSize)){
         return 1;
     } else {
       return -1;
     }
     writeFile.close();
   }
+
+  //File does exist
   else {
+    printf("File does exist\n");
     ofstream writeFile;
-    writeFile.open(fileName, ofstream::out | ofstream::binary | ofstream::app);
+    writeFile.open(fileName, ofstream::out | ofstream::binary);
+    printf("Open check\n");
+
+    writeFile.seekp(toWrite->positionInFile*1024, ios::beg);
+      printf("Seekp check\n");
+
     if(writeFile.write(toWrite->data, toWrite->bytesToUse)) {
         return 1;
     } else {
