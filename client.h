@@ -84,6 +84,7 @@ int client_requester (void) {
   //Identify which servers have the file we want
   vector<int> serversWithFile;
   int sent;
+  long fileSize = 0;
   if (pthread_mutex_lock(&client_fd_lock) == -1){
     perror("pthread_mutex_lock");
   }
@@ -99,6 +100,7 @@ int client_requester (void) {
     }
 
     serverReturn = (struct serverMessage*)rawBuffer;
+    fileSize = serverReturn->fileSize;
     if (serverReturn->hasFile == 1){
       serversWithFile.push_back(client_fd_list[i]);
       printf("File descriptor %i has the file\n", client_fd_list[i]);
@@ -117,14 +119,10 @@ int client_requester (void) {
   if(serverReturn!=NULL){
     serverReturn->bytesToUse = 1;
   }
-
   int filePortion = 0;
   toRequest.portionToReturn = 0;
   toRequest.haveFile = 0;
-
   int filePosition = 0;
-
-  long fileSize = 0;
   long bytesReceived = -1;
   printf("Done setting up\n");
 
@@ -152,8 +150,6 @@ int client_requester (void) {
       //Send all the requests in this round
       for(int i = 0; i < serversWithFile.size(); i++){
         toRequest.portionToReturn = filePosition;
-        printf("Request Data portion to return: %li \n", toRequest.portionToReturn);
-
         filePosition++;
         message = (char*)&toRequest;
         //showBytes((byte_pointer)message, sizeof(clientMessage));
@@ -163,10 +159,8 @@ int client_requester (void) {
           perror("send");
         }
       }
-      printf("Round done\n");
 
       //Get the replies
-      //this is probably where the insufficient size thing is -
       for(int i = 0; i < serversWithFile.size(); i++){
 
         //have to reinitialize because select alters the FD set
@@ -205,7 +199,6 @@ int client_requester (void) {
         serverReturn->fileSize, serverReturn->positionInFile, serverReturn->bytesToUse, serverReturn->overflow);
 
         if(serverReturn->overflow == 0){
-          fileSize = serverReturn->fileSize;
           bytesReceived += serverReturn->bytesToUse;
           if(writeToFile(serverReturn, fileName)){
             printf("successfully wrote to %s\n", fileName.c_str());
@@ -217,9 +210,11 @@ int client_requester (void) {
         // when we have received the whole file, break out of the loop
         if (bytesReceived >= fileSize) {
           break;
+          printf("Breaking\n");
         }
       }
     }
+    printf("Got whole file of file size %li and got %li many bytes\n", fileSize, bytesReceived);
   }
 
   delete[] fileNameArr;
