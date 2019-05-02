@@ -131,7 +131,7 @@ char* readFile(struct clientMessage* toRetrieve){
     length = size-(toRetrieve->portionToReturn*1024);  //if not, just send the rest of the file
     toReturn->outOfRange = 0;
   }
-  printf("Sending %i bytes\n", length);
+  printf("Sending %i bytes\n", (int)length);
 
   inFile.read(toSend, length);
   memcpy(toReturn->data, toSend, length);
@@ -305,7 +305,7 @@ int server_read (void) {
 
               // printf("printing received message:\n");
               // printf("fileName requested: %s and returning starting at block %ld\n", toAccept->fileName, toAccept->portionToReturn);
-              printf("toAccept portion: %i\n", toAccept->portionToReturn);
+              printf("toAccept portion: %li\n", toAccept->portionToReturn);
               //showBytes((byte_pointer)toAccept->fileName, sizeof(clientMessage));
               //showBytes((byte_pointer)buffer, sizeof(clientMessage));
               printf("reading file\n");

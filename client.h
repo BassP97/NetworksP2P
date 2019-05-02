@@ -373,6 +373,7 @@ int writeToFile(struct serverMessage* toWrite, string fileName){
   printf("Writing to file\n");
   //File does not exist
   if(access( fileName.c_str(), F_OK ) == -1){
+    //not fstream because we only need to write - if there are errors maybe change?
     ofstream writeFile(fileName, ofstream::out | ofstream::binary);
     char *writeVal;
     writeVal = (char*)calloc(toWrite->fileSize, sizeof(char));
@@ -396,11 +397,15 @@ int writeToFile(struct serverMessage* toWrite, string fileName){
   //File does exist
   else {
     printf("File does exist\n");
-    ofstream writeFile;
-    writeFile.open(fileName, ofstream::out | ofstream::binary);
+    fstream writeFile;
+    writeFile.open(fileName, ios::out | ios::in | ios::binary);
     writeFile.seekp(toWrite->positionInFile*1024, ofstream::beg);
+
+    showBytes((byte_pointer)toWrite->data, (size_t)toWrite->bytesToUse);
+
+    printf("Writing to position %li\n",toWrite->positionInFile*1024 );
     long pos = writeFile.tellp();
-    printf("writing chunk %i to position %li\n", toWrite->positionInFile, pos);
+    printf("writing chunk %li to position %li\n", toWrite->positionInFile, pos);
     if(writeFile.write(toWrite->data, toWrite->bytesToUse)) {
       writeFile.close();
       return 1;
