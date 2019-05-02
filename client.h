@@ -116,7 +116,7 @@ int client_requester (void) {
     perror("pthread_mutex_unlock");
   }
 
-  usleep(5000000);
+  // usleep(5000000);
 
 
   //============================STAGE TWO==================================
@@ -159,7 +159,6 @@ int client_requester (void) {
 
     printf("Pinging servers with the file you requested\n\n");
 
-    int round_number = 0;
     while (fileSize > bytesReceived){
       //Send requests to every server with the file - we do this in "rounds" where
       //every server with the file gets one request per round
@@ -312,7 +311,8 @@ int client_requester (void) {
 
           int sent = send(serversWithFile[0], message, sizeof(clientMessage), 0);
           valRead = recv(serversWithFile[0], rawBuffer, sizeof(serverMessage), 0);
-          // ADD ERROR CHECKING
+          // ADD ERROR CHECKING - also maybe change to a select, randomly select the server we want to ask for the extra
+          // write the missing message to the file
           serverReturn = (struct serverMessage*)rawBuffer;
           if(serverReturn->outOfRange == 0 && !portionCheck[serverReturn->positionInFile]){
             portionCheck[serverReturn->positionInFile] = true;
@@ -328,10 +328,8 @@ int client_requester (void) {
             break;
           }
         }
-        //cout << "FILE POSITION: " << filePosition << endl;
-        //cout << it->first << " " << it->second << endl;
       }
-      round_number++;
+      //usleep(5000000);
     }
     printf("Got whole file of file size %li and got %li many bytes\n", fileSize, bytesReceived);
   }
