@@ -32,7 +32,7 @@ struct serverMessage{
   long fileSize;        //file size in bytes
   char data[1024];      //actual data we are returning
   char hasFile;         //Updated if haveFile in the client message is 1 - has value 1 if we have file, 0 if not
-  char overflow;        //1 if the portion requested is out of range, 0 otherwise
+  char outOfRange;        //1 if the portion requested is out of range, 0 otherwise
 }serverMessage;
 
 struct clientMessage{
@@ -105,7 +105,7 @@ char* readFile(struct clientMessage* toRetrieve){
     toReturn->bytesToUse = length;
     toReturn->fileSize = (long)size;
     toReturn->hasFile = 0;
-    toReturn->overflow = 0;
+    toReturn->outOfRange = 0;
     return((char*)toReturn);
   }else if(!inFile){
     printf("Unable to open file\n");
@@ -121,15 +121,15 @@ char* readFile(struct clientMessage* toRetrieve){
   if (size - (toRetrieve->portionToReturn*1024) <= 0){
     printf("out of range\n");
     length = 0;
-    toReturn->overflow = 1;
+    toReturn->outOfRange = 1;
   }else if (size-(toRetrieve->portionToReturn*1024) > sizeof(toSend)){
     printf("lots left\n");
     length = sizeof(toSend);
-    toReturn->overflow = 0;
+    toReturn->outOfRange = 0;
   }else{
     printf("sending the rest of the file\n");
     length = size-(toRetrieve->portionToReturn*1024);  //if not, just send the rest of the file
-    toReturn->overflow = 0;
+    toReturn->outOfRange = 0;
   }
   printf("Sending %i bytes\n", length);
 

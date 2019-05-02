@@ -199,7 +199,7 @@ int client_requester (void) {
 
         //if select returns 0 then we have timed out
         if (selectVal == 0){
-          printf("Timeout occured\n");
+          //printf("Timeout occured\n");
           //handle timeouts here
         }else{ // TODO: MULTIPLE CONNECTIONS MIGHT HAVE DATA COME IN AT THE SAME TIME!!
           //if we haven't time out, figure out which connection has data and proceed to read from it
@@ -210,20 +210,26 @@ int client_requester (void) {
               if (valRead == -1){
                 perror("read");
               }
+              if (valRead == 0) { // TODO: HANDLE THIS
+                printf("SERVER DISCONNECTED\n");
+                break;
+              }
               serverReturn = (struct serverMessage*)rawBuffer;
               printf("\n\nData parameters \nFile size: %li \nPosition in file: %li\nBytes to use %i\nOut of range status (should always be 0):%i\n",
               serverReturn->fileSize, serverReturn->positionInFile, serverReturn->bytesToUse, serverReturn->outOfRange);
 
-              if(serverReturn->outOfRange == 0){
+              //If we have already recieved the message (ie portioncheck contains true for this message)
+              //then ignore it. Else, make sure the outOfRange flag isn't set and write it to the file
+              if(serverReturn->outOfRange == 0 && !portionCheck[serverReturn->positionInFile]){
+                portionCheck[serverReturn->positionInFile] = true;
                 bytesReceived += serverReturn->bytesToUse;
                 if(writeToFile(serverReturn, fileName)){
                   printf("successfully wrote to %s\n", fileName.c_str());
                 }else{
                   printf("failed to write to file\n");
-                  break;
                 }
               }
-              else {
+              else if (serverReturn->outOfRange == 1){
                 bytesReceived = fileSize+1; // break out
                 break;
               }
@@ -236,20 +242,10 @@ int client_requester (void) {
           }
           //Cast our raw return bytes to a server message and print out the contents to debug
           serverReturn = (struct serverMessage*)rawBuffer;
-          printf("\n\nData parameters \nFile size: %li \nPosition in file: %li\nBytes to use %i\nOverflow status (should always be 0):%i\n",
-          serverReturn->fileSize, serverReturn->positionInFile, serverReturn->bytesToUse, serverReturn->overflow);
+          printf("\n\nData parameters \nFile size: %li \nPosition in file: %li\nBytes to use %i\noutOfRange status (should always be 0):%i\n",
+          serverReturn->fileSize, serverReturn->positionInFile, serverReturn->bytesToUse, serverReturn->outOfRange);
 
-          //If we have already recieved the message (ie portioncheck contains true for this message)
-          //then ignore it. Else, make sure the overflow flag isn't set and write it to the file
-          if(serverReturn->overflow == 0 && !portionCheck[serverReturn->positionInFile]){
-            portionCheck[serverReturn->positionInFile] = true;
-            bytesReceived += serverReturn->bytesToUse;
-            if(writeToFile(serverReturn, fileName)){
-              printf("successfully wrote to %s\n", fileName.c_str());
-            }else{
-              printf("failed to write to file\n");
-            }
-          }
+
         }
 
         // when we have received the whole file, break out of the loop
@@ -383,21 +379,19 @@ int writeToFile(struct serverMessage* toWrite, string fileName){
     writeVal = (char*)calloc(toWrite->fileSize, sizeof(char));
     // write a bunch of 0's to the file to make it big enough
     if(!writeFile.write(writeVal, toWrite->fileSize)){
+      writeFile.close();
       return -1;
     }
     // write the actual data to the file
+    writeFile.seekp(toWrite->positionInFile*1024, ofstream::beg);
     if(writeFile.write(toWrite->data, toWrite->bytesToUse)) {
-        return 1;
+      writeFile.close();
+      return 1;
     } else {
+      writeFile.close();
       return -1;
     }
-    writeFile.seekp(toWrite->positionInFile*1024, ios::beg);
-    if(writeFile.write(toWrite->data, toWrite->bytesToUse)) {
-        return 1;
-    } else {
-      return -1;
-    }
-    writeFile.close();
+
   }
 
   //File does exist
@@ -405,15 +399,17 @@ int writeToFile(struct serverMessage* toWrite, string fileName){
     printf("File does exist\n");
     ofstream writeFile;
     writeFile.open(fileName, ofstream::out | ofstream::binary);
-    writeFile.seekp(toWrite->positionInFile*1024, ios::beg);
+    writeFile.seekp(toWrite->positionInFile*1024, ofstream::beg);
+    long pos = writeFile.tellp();
+    printf("writing chunk %i to position %li\n", toWrite->positionInFile, pos);
     if(writeFile.write(toWrite->data, toWrite->bytesToUse)) {
-        return 1;
+      writeFile.close();
+      return 1;
     } else {
+      writeFile.close();
       return -1;
     }
-    writeFile.close();
   }
-  return 1;
 }
 
 /* -----------------------------------------------------------------------------
