@@ -7,9 +7,6 @@
 
 using namespace std;
 
-// TODO: ADD AN ERROR MESSAGE FOR A SITUATION WHERE THE SERVER GETS A REQUEST
-// FOR A FILE THAT IT DOES NOT HAVE
-
 typedef unsigned char *byte_pointer;
 
 # define PORT 8080 // the port that the server listens for new connections on
@@ -32,15 +29,15 @@ struct serverMessage{
   long fileSize;        //file size in bytes
   char data[1024];      //actual data we are returning
   char hasFile;         //Updated if haveFile in the client message is 1 - has value 1 if we have file, 0 if not
-  char outOfRange;        //1 if the portion requested is out of range, 0 otherwise
+  char outOfRange;      //1 if the portion requested is out of range, 0 otherwise
 }serverMessage;
 
 struct clientMessage{
-  char fileName[128]; //name of the file we are requesting
-  long portionToReturn;//the portion of the file we want returned - an integer corresponding to the Nth kilobyte
-                       //has to be a long to work correctly with seekg in readFile
-  char haveFile;       //A boolean value that tells the server we are asking if they have the file in fileName
-                       //when actually requesting file data this is 0, when asking if a server has a file is 1
+  char fileName[128];   //name of the file we are requesting
+  long portionToReturn; //the portion of the file we want returned - an integer corresponding to the Nth kilobyte
+                        //has to be a long to work correctly with seekg in readFile
+  char haveFile;        //A boolean value that tells the server we are asking if they have the file in fileName
+                        //when actually requesting file data this is 0, when asking if a server has a file is 1
 }clientMessage;
 
 void showBytes(byte_pointer start, size_t len){
@@ -303,12 +300,6 @@ int server_read (void) {
             if (arrayCheck(buffer, (int)sizeof(clientMessage))){
               struct clientMessage* toAccept = (struct clientMessage*)buffer;
 
-              // printf("printing received message:\n");
-              // printf("fileName requested: %s and returning starting at block %ld\n", toAccept->fileName, toAccept->portionToReturn);
-              printf("toAccept portion: %li\n", toAccept->portionToReturn);
-              //showBytes((byte_pointer)toAccept->fileName, sizeof(clientMessage));
-              //showBytes((byte_pointer)buffer, sizeof(clientMessage));
-              printf("reading file\n");
               char* toReturn = readFile(toAccept);
               send(server_fd_list[i], toReturn, sizeof(serverMessage), 0);
             }else{

@@ -116,7 +116,7 @@ int client_requester (void) {
     perror("pthread_mutex_unlock");
   }
 
-  usleep(1000000);
+  usleep(5000000);
 
 
   //============================STAGE TWO==================================
@@ -159,10 +159,11 @@ int client_requester (void) {
 
     printf("Pinging servers with the file you requested\n\n");
 
+    int round_number = 0;
     while (fileSize > bytesReceived){
       //Send requests to every server with the file - we do this in "rounds" where
       //every server with the file gets one request per round
-      for(int i = 0; i < serversWithFile.size(); i++){
+      for (int i = 0; i < serversWithFile.size(); i++){
 
         //if there isn't any more to read, then simply stop sending requests
         if (filePosition*1024 > fileSize){
@@ -176,6 +177,7 @@ int client_requester (void) {
         //cast our message to a pointer
         message = (char*)&toRequest;
         // printf("SENDING %i to %i\n", toRequest.portionToReturn, serversWithFile[i]);
+        // sent does NOT tell us if anything failed
         int sent = send(serversWithFile[i], message, sizeof(clientMessage), 0);
         sentMessages++;
         if (sent == -1) {
@@ -199,19 +201,69 @@ int client_requester (void) {
 
         //if select returns 0 then we have timed out
         if (selectVal == 0) {
-          //printf("Timeout occured\n");
-          //handle timeouts here
-        } else { // TODO: MULTIPLE CONNECTIONS MIGHT HAVE DATA COME IN AT THE SAME TIME!!
+          //handle timeouts here - do we actually have to do anything?
+        } else {
           //if we haven't time out, figure out which connection has data and proceed to read from it
           //We determine which connection has data by checking which file descriptor is currently set
           for (int j = 0; j < serversWithFile.size(); j++) {
             if (FD_ISSET(serversWithFile[j], &readFDSet)) {
               valRead = recv(serversWithFile[j], rawBuffer, sizeof(serverMessage), 0);
               if (valRead == -1){
-                perror("read");
+                perror("recv");
               }
-              if (valRead == 0) { // TODO: HANDLE THIS
-                printf("SERVER DISCONNECTED\n");
+              if (valRead == 0) {
+                int socket = serversWithFile[j];
+
+                // remove the file descriptor from the list of servers that have the file.
+                serversWithFile.erase(serversWithFile.begin()+j);
+
+                // determine the IP address of the disconnected host and remove it from the list of
+                // connected hosts - this must be done in a lock because connected_list is shared
+                // with the connector thread
+                struct sockaddr addr;
+                printf("socket %i\n", socket);
+                socklen_t len = sizeof(struct sockaddr);
+                getpeername(socket, &addr, &len);
+                struct sockaddr_in* addr_in = (struct sockaddr_in*)&addr;
+                // need to calloc here otherwise it doesn't update the ip address properly
+                char* ip_cstr = (char*)calloc(INET_ADDRSTRLEN, sizeof(char));
+                strcpy(ip_cstr, inet_ntoa(addr_in->sin_addr));
+                string ipstr = ip_cstr;
+                free(ip_cstr);
+
+                // ----------------------------------------------------------------------
+                // inside the lock, remove the IP address from the connected list and
+                // also remove the socket from the client fd list - both are shared with
+                // the client connector thread
+                if (pthread_mutex_lock(&client_fd_lock) == -1)
+                {
+                  perror("pthread_mutex_lock");
+                  // TODO: do something here to handle the error
+                }
+                // search the list of connected IP addresses and remove this one
+                // once we find it
+                printf("connected list size: %i\n", connected_list.size());
+                for (int k = 0; k < connected_list.size(); k++)
+                {
+                  cout << connected_list[k] << endl;
+                  if (ipstr.compare(connected_list[k]) == 0)
+                  {
+                    printf("%i disconnected\n", k);
+                    connected_list.erase(connected_list.begin()+k);
+                    break;
+                  }
+                }
+                client_fd_list.erase(remove(client_fd_list.begin(), client_fd_list.end(), socket), client_fd_list.end());
+                if (pthread_mutex_unlock(&client_fd_lock) == -1)
+                {
+                  perror("pthread_mutex_unlock");
+                  // TODO: handle the error
+                }
+                // ----------------------------------------------------------------------
+                // finally, close the socket so that it can be reused
+                close(socket);
+                // break out of the for loop to ensure that we don't have any issues
+                // by continuing to use a for loop with the serversWithFile vector altered
                 break;
               }
               serverReturn = (struct serverMessage*)rawBuffer;
@@ -224,7 +276,7 @@ int client_requester (void) {
                 portionCheck[serverReturn->positionInFile] = true;
                 bytesReceived += serverReturn->bytesToUse;
                 if(writeToFile(serverReturn, fileName)){
-                  printf("successfully wrote to %s\n", fileName.c_str());
+                  //printf("successfully wrote to %s\n", fileName.c_str());
                 }else{
                   printf("failed to write to file\n");
                 }
@@ -239,18 +291,47 @@ int client_requester (void) {
               }
             }
           }
-          //Cast our raw return bytes to a server message and print out the contents to debug
-          // serverReturn = (struct serverMessage*)rawBuffer;
-          // printf("\n\nData parameters \nFile size: %li \nPosition in file: %li\nBytes to use %i\noutOfRange status (should always be 0):%i\n",
-          // serverReturn->fileSize, serverReturn->positionInFile, serverReturn->bytesToUse, serverReturn->outOfRange);
-
         }
-
         // when we have received the whole file, break out of the loop
         if (bytesReceived >= fileSize) {
           break;
         }
       }
+      for (map<int,bool>::iterator it=portionCheck.begin(); it!=portionCheck.end(); it++)
+      {
+        // TODO: clean this up, make some helper functions cuz this uses a lot of copied code from elsewhere
+        if (it->first < (filePosition-serversWithFile.size()) && it->second == false)
+        {
+          printf("getting missing chunk %i\n", it->first);
+          // resend the message
+          struct clientMessage toRequest;
+          strcpy(toRequest.fileName, fileNameArr);
+          toRequest.portionToReturn = it->first;
+          toRequest.haveFile = 0;
+          message = (char*)&toRequest;
+
+          int sent = send(serversWithFile[0], message, sizeof(clientMessage), 0);
+          valRead = recv(serversWithFile[0], rawBuffer, sizeof(serverMessage), 0);
+          // ADD ERROR CHECKING
+          serverReturn = (struct serverMessage*)rawBuffer;
+          if(serverReturn->outOfRange == 0 && !portionCheck[serverReturn->positionInFile]){
+            portionCheck[serverReturn->positionInFile] = true;
+            bytesReceived += serverReturn->bytesToUse;
+            if(writeToFile(serverReturn, fileName)){
+              //printf("successfully wrote to %s\n", fileName.c_str());
+            }else{
+              printf("failed to write to file\n");
+            }
+          }
+          else if (serverReturn->outOfRange == 1){
+            bytesReceived = fileSize+1; // break out
+            break;
+          }
+        }
+        //cout << "FILE POSITION: " << filePosition << endl;
+        //cout << it->first << " " << it->second << endl;
+      }
+      round_number++;
     }
     printf("Got whole file of file size %li and got %li many bytes\n", fileSize, bytesReceived);
   }
@@ -282,8 +363,8 @@ int client_connector (void) {
 
   struct sockaddr_in servAddr;
   char addr[8];
-
   vector<string> host_list;
+
   struct hostent* he;
   char hostname[64];
   char hostaddr[16];
@@ -311,13 +392,27 @@ int client_connector (void) {
 
   while (1)
   {
+
     for (int i = 0; i < host_list.size(); i++)
     {
       // if the ip address we're looking at is NOT the local one and we aren't already
       // connected to it, try to connect to it
+      // ----------------------------------------------------------------------
+      // connected_list is shared, so we need to acquire the lock
+      if (pthread_mutex_lock(&client_fd_lock) == -1)
+      {
+        perror("pthread_mutex_lock");
+        // TODO: do something here to handle the error
+      }
       if (strcmp(hostaddr, host_list[i].c_str()) != 0 && find(connected_list.begin(),
             connected_list.end(), host_list[i]) == connected_list.end())
       {
+        if (pthread_mutex_unlock(&client_fd_lock) == -1)
+        {
+          perror("pthread_mutex_unlock");
+          // TODO: handle the error
+        }
+        // ----------------------------------------------------------------------
         sock = socket(AF_INET, SOCK_STREAM, 0);
         if (sock < 0)
         {
@@ -373,7 +468,7 @@ int client_connector (void) {
               // otherwise, we are connected!
               else
               {
-                printf("Successfully connected to %s\n", host_list[i].c_str());
+                printf("Successfully connected to %s with %i\n", host_list[i].c_str(), sock);
                 if (find(client_fd_list.begin(), client_fd_list.end(), sock) == client_fd_list.end()) {
                   // ----------------------------------------------------------------------
                   // must be in the lock because the client fd list is shared with the client requester thread
@@ -444,6 +539,17 @@ int client_connector (void) {
           }
         }
       }
+      else
+      {
+        // we acquired the lock right before the if statement, so release it now
+        if (pthread_mutex_unlock(&client_fd_lock) == -1)
+        {
+          perror("pthread_mutex_unlock");
+          // TODO: handle the error
+        }
+        // ----------------------------------------------------------------------
+      }
+
     }
   }
 }
