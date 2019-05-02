@@ -136,7 +136,6 @@ int client_requester (void) {
   toRequest.haveFile = 0;
   int filePosition = 0;
   long bytesReceived = -1;
-  printf("Done setting up\n");
 
   //check if any servers have our file - if not don't even bother sending more messages
   if(serversWithFile.size()==0){
@@ -155,7 +154,7 @@ int client_requester (void) {
     int res;
     int sentMessages;
 
-    timeoutPeriod.tv_sec = 10;
+    timeoutPeriod.tv_sec = 1;
     timeoutPeriod.tv_usec = 0;
 
     printf("Pinging servers with the file you requested\n\n");
@@ -176,6 +175,7 @@ int client_requester (void) {
 
         //cast our message to a pointer
         message = (char*)&toRequest;
+        // printf("SENDING %i to %i\n", toRequest.portionToReturn, serversWithFile[i]);
         int sent = send(serversWithFile[i], message, sizeof(clientMessage), 0);
         sentMessages++;
         if (sent == -1) {
@@ -191,22 +191,22 @@ int client_requester (void) {
         for(int j = 0; j < serversWithFile.size(); j++){
           FD_SET(serversWithFile[j], &readFDSet);
           if(serversWithFile[j]>largestFD){
-            largestFD = serversWithFile[j]+1;
+            largestFD = serversWithFile[j];
           }
         }
-        // printf("Selecting\n");
+        largestFD++;
         selectVal = select(largestFD, &readFDSet, NULL, NULL, &timeoutPeriod);
 
         //if select returns 0 then we have timed out
-        if (selectVal == 0){
+        if (selectVal == 0) {
           //printf("Timeout occured\n");
           //handle timeouts here
-        }else{ // TODO: MULTIPLE CONNECTIONS MIGHT HAVE DATA COME IN AT THE SAME TIME!!
+        } else { // TODO: MULTIPLE CONNECTIONS MIGHT HAVE DATA COME IN AT THE SAME TIME!!
           //if we haven't time out, figure out which connection has data and proceed to read from it
           //We determine which connection has data by checking which file descriptor is currently set
-          for(int j = 0; j < serversWithFile.size(); j++){
-            if (FD_ISSET(serversWithFile[i], &readFDSet)){
-              valRead = recv(serversWithFile[i], rawBuffer, sizeof(serverMessage), 0);
+          for (int j = 0; j < serversWithFile.size(); j++) {
+            if (FD_ISSET(serversWithFile[j], &readFDSet)) {
+              valRead = recv(serversWithFile[j], rawBuffer, sizeof(serverMessage), 0);
               if (valRead == -1){
                 perror("read");
               }
@@ -233,7 +233,6 @@ int client_requester (void) {
                 bytesReceived = fileSize+1; // break out
                 break;
               }
-
               // when we have received the whole file, break out of the loop
               if (bytesReceived >= fileSize) {
                 break;
@@ -241,16 +240,15 @@ int client_requester (void) {
             }
           }
           //Cast our raw return bytes to a server message and print out the contents to debug
-          serverReturn = (struct serverMessage*)rawBuffer;
-          printf("\n\nData parameters \nFile size: %li \nPosition in file: %li\nBytes to use %i\noutOfRange status (should always be 0):%i\n",
-          serverReturn->fileSize, serverReturn->positionInFile, serverReturn->bytesToUse, serverReturn->outOfRange);
+          // serverReturn = (struct serverMessage*)rawBuffer;
+          // printf("\n\nData parameters \nFile size: %li \nPosition in file: %li\nBytes to use %i\noutOfRange status (should always be 0):%i\n",
+          // serverReturn->fileSize, serverReturn->positionInFile, serverReturn->bytesToUse, serverReturn->outOfRange);
 
         }
 
         // when we have received the whole file, break out of the loop
         if (bytesReceived >= fileSize) {
           break;
-          printf("Breaking\n");
         }
       }
     }
@@ -370,7 +368,6 @@ int client_connector (void) {
 }
 
 int writeToFile(struct serverMessage* toWrite, string fileName){
-  printf("Writing to file\n");
   //File does not exist
   if(access( fileName.c_str(), F_OK ) == -1){
     //not fstream because we only need to write - if there are errors maybe change?
@@ -396,16 +393,13 @@ int writeToFile(struct serverMessage* toWrite, string fileName){
 
   //File does exist
   else {
-    printf("File does exist\n");
     fstream writeFile;
     writeFile.open(fileName, ios::out | ios::in | ios::binary);
     writeFile.seekp(toWrite->positionInFile*1024, ofstream::beg);
 
-    showBytes((byte_pointer)toWrite->data, (size_t)toWrite->bytesToUse);
+    // showBytes((byte_pointer)toWrite->data, (size_t)toWrite->bytesToUse);
 
-    printf("Writing to position %li\n",toWrite->positionInFile*1024 );
     long pos = writeFile.tellp();
-    printf("writing chunk %li to position %li\n", toWrite->positionInFile, pos);
     if(writeFile.write(toWrite->data, toWrite->bytesToUse)) {
       writeFile.close();
       return 1;
