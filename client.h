@@ -273,7 +273,6 @@ int client_requester (void) {
  * again later.
  * Parameters: none
  * Returns: nothing right now
- // THIS DOES NOT ALWAYS WORK
  * ---------------------------------------------------------------------------*/
 int client_connector (void) {
   printf("Starting client connector\n");
@@ -320,29 +319,101 @@ int client_connector (void) {
             connected_list.end(), host_list[i]) == connected_list.end())
       {
         sock = socket(AF_INET, SOCK_STREAM, 0);
+        if (sock < 0)
+        {
+          perror("socket");
+        }
 
         memset(&servAddr, '0', sizeof(servAddr));
 
         servAddr.sin_family = AF_INET;
         servAddr.sin_port = htons(PORT);
-
         //Convert IPv4 addresses from text to binary form
         inet_pton(AF_INET, host_list[i].c_str(), &servAddr.sin_addr);
 
-        // set the timeout on the connect() call so we don't wait forever
-        if (setsockopt (sock, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout, sizeof(timeout)) < 0) {
-          perror("setsockopt");
-          // TODO: handle error
+        // set the socket to nonblocking
+        long flags;
+        if (flags = fcntl(sock, F_GETFL, NULL) < 0)
+        {
+          perror("fcntl");
         }
-        // try to connect to the address
+        flags = flags | O_NONBLOCK;
+        if (fcntl(sock, F_SETFL, flags) < 0)
+        {
+          perror("fcntl");
+        }
+
+        int sock_closed = 0;
+
+        // attempt to connect
         int ret = connect(sock, (struct sockaddr *)&servAddr, sizeof(servAddr));
-        if (ret < 0) {
-          close(sock); // if it fails, close the socket so we can reuse the number
+        // if the connection failed
+        if (ret < 0)
+        {
+          if (errno == EINPROGRESS)
+          {
+            fd_set temp_set;
+            FD_ZERO(&temp_set);
+            FD_SET(sock, &temp_set);
+            // use select to wait until we the other host tells us it's connected, refuses
+            // our connection, or times out
+            if (select(sock+1, NULL, &temp_set, NULL, &timeout) > 0)
+            {
+              // if select DOESN't time out
+              socklen_t len = sizeof(int);
+              int err_val;
+              // check the errors associated with the socket
+              getsockopt(sock, SOL_SOCKET, SO_ERROR, (void*)(&err_val), &len);
+              // if there are any errors, the connection didn't go through
+              if (err_val)
+              {
+                close(sock);
+                sock_closed = 1;
+              }
+              // otherwise, we are connected!
+              else
+              {
+                printf("Successfully connected to %s\n", host_list[i].c_str());
+                if (find(client_fd_list.begin(), client_fd_list.end(), sock) == client_fd_list.end()) {
+                  // ----------------------------------------------------------------------
+                  // must be in the lock because the client fd list is shared with the client requester thread
+                  if (pthread_mutex_lock(&client_fd_lock) == -1)
+                  {
+                    perror("pthread_mutex_lock");
+                    // TODO: do something here to handle the error
+                  }
+                  client_fd_list.push_back(sock);
+                  connected_list.push_back(host_list[i]);
+                  if (pthread_mutex_unlock(&client_fd_lock) == -1)
+                  {
+                    perror("pthread_mutex_unlock");
+                    // TODO: handle the error
+                  }
+                  // ----------------------------------------------------------------------
+
+                }
+              }
+            }
+            // otherwise, select timed out or had another error; just close the socket and continue
+            else
+            {
+              close(sock);
+              sock_closed = 1;
+            }
+          }
+          // otherwise, the connect call had some other kind of error
+          else
+          {
+            perror("connect");
+            close(sock);
+            sock_closed = 1;
+          }
         }
-        else {
-          printf("Successfully connected to %s with %i\n", host_list[i].c_str(), sock);
-          // if it's a brand new connection, add its socket to the list of sockets the client
-          // is connected to
+        // otherwise, we managed to connect without using select
+        // TODO: is this even possible?
+        else
+        {
+          printf("Successfully connected to %s\n", host_list[i].c_str());
           if (find(client_fd_list.begin(), client_fd_list.end(), sock) == client_fd_list.end()) {
             // ----------------------------------------------------------------------
             // must be in the lock because the client fd list is shared with the client requester thread
@@ -360,6 +431,16 @@ int client_connector (void) {
             }
             // ----------------------------------------------------------------------
 
+          }
+        }
+        // else, it connected just fine
+        // set back to nonblocking
+        if (sock_closed == 0)
+        {
+          flags = flags & ~O_NONBLOCK;
+          if (fcntl(sock, F_SETFL, flags) < 0)
+          {
+            perror("fcntl");
           }
         }
       }

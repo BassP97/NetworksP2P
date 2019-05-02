@@ -12,6 +12,7 @@
 #include <vector>
 #include <netdb.h>
 #include <algorithm>
+#include <fcntl.h>
 #include "client.h"
 #include "server.h"
 
