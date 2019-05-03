@@ -64,8 +64,29 @@ int client_requester (void) {
   struct serverMessage* serverReturn;
 
   // request a file from the server
-  printf("Type in a filename to request from the server\n");
+  printf("Type in a filename to request from the server, or type quit to exit\n");
   cin >> fileName;
+
+  // if the user types quit, we need to tell all of the other threads to exit
+  if (fileName.compare("quit") == 0)
+  {
+    // ----------------------------------------------------------------------
+    // check if the user has requested to quit the program; if they have,
+    // end this thread.
+    if (pthread_mutex_lock(&stop_lock) == -1)
+    {
+      perror("pthread_mutex_lock");
+      // TODO: do something here to handle the error
+    }
+    stopped = 1;
+    if (pthread_mutex_unlock(&stop_lock) == -1)
+    {
+      perror("pthread_mutex_lock");
+      // TODO: do something here to handle the error
+    }
+    return 0;
+    // ----------------------------------------------------------------------
+  }
 
   //convert the file name to a cstring
   char* fileNameArr = new char[fileName.length()+1];
@@ -354,7 +375,6 @@ int client_requester (void) {
  * Returns: nothing right now
  * ---------------------------------------------------------------------------*/
 int client_connector (void) {
-  printf("Starting client connector\n");
   struct sockaddr_in address;
   int sock;
   fd_set readSet, writeSet;
@@ -387,9 +407,51 @@ int client_connector (void) {
     // TODO: handle error
   }
   strncpy(hostaddr, inet_ntoa(*((struct in_addr*)he->h_addr)), 16);
-
   while (1)
   {
+    // ----------------------------------------------------------------------
+    // check if the user has requested to quit the program; if they have,
+    // end this thread.
+    if (pthread_mutex_lock(&stop_lock) == -1)
+    {
+      perror("pthread_mutex_lock");
+      // TODO: do something here to handle the error
+    }
+    if (stopped == 1)
+    {
+      if (pthread_mutex_unlock(&stop_lock) == -1)
+      {
+        perror("pthread_mutex_lock");
+        // TODO: do something here to handle the error
+      }
+      // ----------------------------------------------------------------------
+      // free the client's sockets
+      if (pthread_mutex_lock(&client_fd_lock) == -1)
+      {
+        perror("pthread_mutex_lock");
+        // TODO: do something here to handle the error
+      }
+      // client_fd_list.push_back(sock);
+      // connected_list.push_back(host_list[i]);
+      for (int i = 0; i < client_fd_list.size(); i++)
+      {
+        close(client_fd_list[i]);
+      }
+      if (pthread_mutex_unlock(&client_fd_lock) == -1)
+      {
+        perror("pthread_mutex_unlock");
+        // TODO: handle the error
+      }
+      // ----------------------------------------------------------------------
+      return 0;
+    }
+
+    if (pthread_mutex_unlock(&stop_lock) == -1)
+    {
+      perror("pthread_mutex_lock");
+      // TODO: do something here to handle the error
+    }
+    // ----------------------------------------------------------------------
 
     for (int i = 0; i < host_list.size(); i++)
     {
@@ -503,7 +565,6 @@ int client_connector (void) {
           }
         }
         // otherwise, we managed to connect without using select
-        // TODO: is this even possible?
         else
         {
           printf("Successfully connected to %s\n", host_list[i].c_str());

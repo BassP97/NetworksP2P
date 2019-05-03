@@ -15,6 +15,9 @@ fd_set server_readfds; // global set of file descriptors for the reading server 
 pthread_mutex_t server_readfd_lock; // lock for server_readfds since it's global and accessed by multiple threads
 vector<int> server_fd_list; // list of currently active file descriptors
 
+bool stopped = 0;
+pthread_mutex_t stop_lock;
+
 void* start_server_listen(void* arg);
 void* start_server_read(void* arg);
 int server_listen(void);
@@ -154,6 +157,7 @@ int server_listen(void) {
   int opt = 1;
   struct sockaddr_in address;
   int addrlen = sizeof(address);
+  struct timeval timeout;
 
   // create the listening file descriptor
   // TODO: do we need to take care of error returns here? (i.e. what if socket()
@@ -164,6 +168,9 @@ int server_listen(void) {
   address.sin_addr.s_addr = INADDR_ANY;
 
   address.sin_port = htons(PORT);
+
+  timeout.tv_sec = 0;
+  timeout.tv_usec = 20000;
 
   //if (setsockopt(serverFd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)) < 0)
   if (setsockopt(serverFd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0)
@@ -186,10 +193,54 @@ int server_listen(void) {
   // loop, listening for new conections
   while (1)
   {
+    // ----------------------------------------------------------------------
+    // check if the user has requested to quit the program; if they have,
+    // end this thread.
+    if (pthread_mutex_lock(&stop_lock) == -1)
+    {
+      perror("pthread_mutex_lock");
+      // TODO: do something here to handle the error
+    }
+    if (stopped == 1)
+    {
+      close(serverFd);
+      close(newSocket);
+      if (pthread_mutex_unlock(&stop_lock) == -1)
+      {
+        perror("pthread_mutex_lock");
+        // TODO: do something here to handle the error
+      }
+      return 0;
+    }
+    if (pthread_mutex_unlock(&stop_lock) == -1)
+    {
+      perror("pthread_mutex_lock");
+      // TODO: do something here to handle the error
+    }
+    // ----------------------------------------------------------------------
+
+    // set the socket to nonblocking
+    // necessary so that we don't hang on the accept call until we get a connection
+    // continuously looping without hanging allows us to check if we should shut down
+    long flags;
+    if (flags = fcntl(serverFd, F_GETFL, NULL) < 0)
+    {
+      perror("fcntl");
+    }
+    flags = flags | O_NONBLOCK;
+    if (fcntl(serverFd, F_SETFL, flags) < 0)
+    {
+      perror("fcntl");
+    }
+
     newSocket = accept(serverFd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
+    // printf("accepted\n");
     if (newSocket == -1)
     {
-      perror("accept");
+      if (errno != EWOULDBLOCK & errno != EAGAIN)
+      {
+        perror("accept");
+      }
     }
     else {
       // ----------------------------------------------------------------------
@@ -207,6 +258,12 @@ int server_listen(void) {
         perror("pthread_mutex_unlock");
         // TODO: handle the error
       }
+    }
+    // set back to nonblocking
+    flags = flags & ~O_NONBLOCK;
+    if (fcntl(serverFd, F_SETFL, flags) < 0)
+    {
+      perror("fcntl");
     }
 
   }
@@ -242,6 +299,47 @@ int server_read (void) {
   timeout.tv_sec = 0;
   timeout.tv_usec = 100000; // 100 milliseconds; WE MAY WANT TO CHANGE THIS
   while (1) {
+    // ----------------------------------------------------------------------
+    // check if the user has requested to quit the program; if they have,
+    // end this thread.
+    if (pthread_mutex_lock(&stop_lock) == -1)
+    {
+      perror("pthread_mutex_lock");
+      // TODO: do something here to handle the error
+    }
+    if (stopped == 1)
+    {
+      if (pthread_mutex_unlock(&stop_lock) == -1)
+      {
+        perror("pthread_mutex_lock");
+        // TODO: do something here to handle the error
+      }
+      // ----------------------------------------------------------------------
+      // close the server's sockets with other clients
+      if (pthread_mutex_lock(&server_readfd_lock) == -1)
+      {
+        perror("pthread_mutex_lock");
+        // TODO: do something here to handle the error
+      }
+      for (int i = 0; i < server_fd_list.size(); i++)
+      {
+        close(server_fd_list[i]);
+      }
+      if (pthread_mutex_unlock(&server_readfd_lock) == -1)
+      {
+        perror("pthread_mutex_unlock");
+        // TODO: handle the error
+      }
+      // ----------------------------------------------------------------------
+      return 0;
+    }
+    if (pthread_mutex_unlock(&stop_lock) == -1)
+    {
+      perror("pthread_mutex_lock");
+      // TODO: do something here to handle the error
+    }
+    // ----------------------------------------------------------------------
+
     // clear out the file descriptor sets to ensure they are empty
     FD_ZERO(&server_readfds_copy);
     FD_ZERO(&writefds);
