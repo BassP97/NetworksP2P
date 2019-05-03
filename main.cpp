@@ -18,8 +18,6 @@
 
 using namespace std;
 
-// TODO: make a function to destroy resources when we have to quit due to an error
-
 int main(int argc,char *argv[]) {
 
   pthread_t threads[4]; // 4 threads plus this one

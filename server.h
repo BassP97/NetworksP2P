@@ -24,6 +24,8 @@ int server_listen(void);
 int server_read (void);
 int serverSend(char* toSend, int sendFD);
 int arrayCheck(char* toCheck, int arraySize);
+void stop_server_listener(int serverFd, int newSocket);
+void stop_server_reader(void);
 
 struct serverMessage{
   long positionInFile;  //what position the data should be placed in
@@ -87,6 +89,71 @@ void* start_server_read(void* arg) {
   pthread_exit(NULL);
 }
 
+/* -----------------------------------------------------------------------------
+ * void stop_server_listener (void)
+ * Called when a fatal error occurs in the server listern thread. Frees
+ * resources and sets the stopped variable to 1 to let other threads know they
+ * should exit. Does NOT return or exit the thread; the caller is responsible
+ * for doing that after calling stop_server_listener();
+ * Parameters: none
+ * Returns: none
+ * ---------------------------------------------------------------------------*/
+void stop_server_listener(int serverFd, int newSocket)
+{
+  if (pthread_mutex_lock(&stop_lock) == -1)
+  {
+    perror("pthread_mutex_lock");
+  }
+  stopped = 1;
+  if (serverFd > 2)
+  {
+    close(serverFd);
+  }
+  if (newSocket > 2)
+  {
+    close(newSocket);
+  }
+  if (pthread_mutex_unlock(&stop_lock) == -1)
+  {
+    perror("pthread_mutex_lock");
+  }
+}
+
+/* -----------------------------------------------------------------------------
+ * void stop_server_reader (void)
+ * Called when a fatal error occurs in the server reader thread. Frees
+ * resources and sets the stopped variable to 1 to let other threads know they
+ * should exit. Does NOT return or exit the thread; the caller is responsible
+ * for doing that after calling stop_server_reader();
+ * Parameters: none
+ * Returns: none
+ * ---------------------------------------------------------------------------*/
+void stop_server_reader(void)
+{
+  if (pthread_mutex_lock(&stop_lock) == -1)
+  {
+    perror("pthread_mutex_lock");
+  }
+  stopped = 1;
+  if (pthread_mutex_unlock(&stop_lock) == -1)
+  {
+    perror("pthread_mutex_lock");
+  }
+  // close the server's sockets with other clients
+  if (pthread_mutex_lock(&server_readfd_lock) == -1)
+  {
+    perror("pthread_mutex_lock");
+  }
+  for (int i = 0; i < server_fd_list.size(); i++)
+  {
+    close(server_fd_list[i]);
+  }
+  if (pthread_mutex_unlock(&server_readfd_lock) == -1)
+  {
+    perror("pthread_mutex_unlock");
+  }
+}
+
 char* readFile(struct clientMessage* toRetrieve){
   std::ifstream inFile;
   char toSend[1024];
@@ -109,7 +176,7 @@ char* readFile(struct clientMessage* toRetrieve){
     return((char*)toReturn);
   }else if(!inFile){
     printf("Unable to open file\n");
-    exit(0); // TODO: THIS IS NOT WHAT WE SHOULD DO HERE
+    return NULL;
   }
 
   //get the total file size and set the position to the byte we have to read
@@ -160,9 +227,12 @@ int server_listen(void) {
   struct timeval timeout;
 
   // create the listening file descriptor
-  // TODO: do we need to take care of error returns here? (i.e. what if socket()
-  // or setsockopt() fail)
   serverFd = socket(AF_INET, SOCK_STREAM, 0);
+  if (serverFd == -1)
+  {
+    stop_server_listener(serverFd, newSocket);
+    return 1;
+  }
 
   address.sin_family = AF_INET;
   address.sin_addr.s_addr = INADDR_ANY;
@@ -172,22 +242,26 @@ int server_listen(void) {
   timeout.tv_sec = 0;
   timeout.tv_usec = 20000;
 
-  //if (setsockopt(serverFd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)) < 0)
   if (setsockopt(serverFd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0)
   {
     perror("setsockopt");
+    stop_server_listener(serverFd, newSocket);
+    return 1;
   }
 
   // attach socket to the port
   if (::bind(serverFd, (struct sockaddr *)&address, sizeof(address)) == -1) {
     perror("bind");
-    // TODO: exit? do something
+    stop_server_listener(serverFd, newSocket);
+    return 1;
   }
 
   // start listening for client connections
   if (listen(serverFd, 5) == -1)
   {
     perror("listen");
+    stop_server_listener(serverFd, newSocket);
+    return 1;
   }
 
   // loop, listening for new conections
@@ -199,7 +273,8 @@ int server_listen(void) {
     if (pthread_mutex_lock(&stop_lock) == -1)
     {
       perror("pthread_mutex_lock");
-      // TODO: do something here to handle the error
+      stop_server_listener(serverFd, newSocket);
+      return 1;
     }
     if (stopped == 1)
     {
@@ -208,14 +283,14 @@ int server_listen(void) {
       if (pthread_mutex_unlock(&stop_lock) == -1)
       {
         perror("pthread_mutex_lock");
-        // TODO: do something here to handle the error
       }
       return 0;
     }
     if (pthread_mutex_unlock(&stop_lock) == -1)
     {
       perror("pthread_mutex_lock");
-      // TODO: do something here to handle the error
+      stop_server_listener(serverFd, newSocket);
+      return 1;
     }
     // ----------------------------------------------------------------------
 
@@ -226,11 +301,15 @@ int server_listen(void) {
     if (flags = fcntl(serverFd, F_GETFL, NULL) < 0)
     {
       perror("fcntl");
+      stop_server_listener(serverFd, newSocket);
+      return 1;
     }
     flags = flags | O_NONBLOCK;
     if (fcntl(serverFd, F_SETFL, flags) < 0)
     {
       perror("fcntl");
+      stop_server_listener(serverFd, newSocket);
+      return 1;
     }
 
     newSocket = accept(serverFd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
@@ -240,6 +319,8 @@ int server_listen(void) {
       if (errno != EWOULDBLOCK & errno != EAGAIN)
       {
         perror("accept");
+        stop_server_listener(serverFd, newSocket);
+        return 1;
       }
     }
     else {
@@ -248,7 +329,8 @@ int server_listen(void) {
       if (pthread_mutex_lock(&server_readfd_lock) == -1)
       {
         perror("pthread_mutex_lock");
-        // TODO: do something here to handle the error
+        stop_server_listener(serverFd, newSocket);
+        return 1;
       }
       FD_SET(newSocket, &server_readfds); // put the file descriptor in the set
       //readfd_count++;
@@ -256,7 +338,8 @@ int server_listen(void) {
       if (pthread_mutex_unlock(&server_readfd_lock) == -1)
       {
         perror("pthread_mutex_unlock");
-        // TODO: handle the error
+        stop_server_listener(serverFd, newSocket);
+        return 1;
       }
     }
     // set back to nonblocking
@@ -264,6 +347,8 @@ int server_listen(void) {
     if (fcntl(serverFd, F_SETFL, flags) < 0)
     {
       perror("fcntl");
+      stop_server_listener(serverFd, newSocket);
+      return 1;
     }
 
   }
@@ -305,21 +390,20 @@ int server_read (void) {
     if (pthread_mutex_lock(&stop_lock) == -1)
     {
       perror("pthread_mutex_lock");
-      // TODO: do something here to handle the error
+      stop_server_reader();
+      return 1;
     }
     if (stopped == 1)
     {
       if (pthread_mutex_unlock(&stop_lock) == -1)
       {
         perror("pthread_mutex_lock");
-        // TODO: do something here to handle the error
       }
       // ----------------------------------------------------------------------
       // close the server's sockets with other clients
       if (pthread_mutex_lock(&server_readfd_lock) == -1)
       {
         perror("pthread_mutex_lock");
-        // TODO: do something here to handle the error
       }
       for (int i = 0; i < server_fd_list.size(); i++)
       {
@@ -328,7 +412,6 @@ int server_read (void) {
       if (pthread_mutex_unlock(&server_readfd_lock) == -1)
       {
         perror("pthread_mutex_unlock");
-        // TODO: handle the error
       }
       // ----------------------------------------------------------------------
       return 0;
@@ -336,7 +419,8 @@ int server_read (void) {
     if (pthread_mutex_unlock(&stop_lock) == -1)
     {
       perror("pthread_mutex_lock");
-      // TODO: do something here to handle the error
+      stop_server_reader();
+      return 1;
     }
     // ----------------------------------------------------------------------
 
@@ -349,12 +433,12 @@ int server_read (void) {
     if (pthread_mutex_lock(&server_readfd_lock) == -1)
     {
       perror("pthread_mutex_lock");
-      // TODO: do something here to handle the error
+      stop_server_reader();
+      return 1;
     }
     server_readfds_copy = server_readfds;
     int nfds = 0;
     // determine what nfds should be; it is supposed to be the largest FD in the set + 1
-    // TODO: THIS IS SUPER INEFFICIENT, WE SHOULD JUST KEEP THIS VECTOR SORTED
     for (int i = 0; i < server_fd_list.size(); i++)
     {
       if (server_fd_list[i] > nfds)
@@ -366,7 +450,8 @@ int server_read (void) {
     if (pthread_mutex_unlock(&server_readfd_lock) == -1)
     {
       perror("pthread_mutex_unlock");
-      // TODO: handle the error
+      stop_server_reader();
+      return 1;
     }
     // ----------------------------------------------------------------------
 
@@ -374,7 +459,8 @@ int server_read (void) {
     ready = select(nfds, &server_readfds_copy, &writefds, &exceptfds, &timeout);
     if (ready == -1) {
       perror("select");
-      // TODO: handle the error
+      stop_server_reader();
+      return 1;
     }
     else if (ready != 0) {
       // iterate through all of the file descriptors that we may have
@@ -385,7 +471,8 @@ int server_read (void) {
       if (pthread_mutex_lock(&server_readfd_lock) == -1)
       {
         perror("pthread_mutex_lock");
-        // TODO: do something here to handle the error
+        stop_server_reader();
+        return 1;
       }
       for (int i = 0; i < server_fd_list.size(); i++)
       {
@@ -419,7 +506,8 @@ int server_read (void) {
       if (pthread_mutex_unlock(&server_readfd_lock) == -1)
       {
         perror("pthread_mutex_unlock");
-        // TODO: handle the error
+        stop_server_reader();
+        return 1;
       }
       // ----------------------------------------------------------------------
     }

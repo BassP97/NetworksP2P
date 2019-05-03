@@ -18,6 +18,7 @@ int client_connector(void);
 int writeToFile(struct serverMessage* toWrite, string fileName);
 void showBytes(byte_pointer start, size_t len);
 vector<string> read_hosts(string filename);
+void stop_client_requester(void);
 
 /* -----------------------------------------------------------------------------
  * void* start_client_requester (void* arg)
@@ -51,9 +52,67 @@ void* start_client_connector(void* arg)
   pthread_exit(NULL);
 }
 
+/* -----------------------------------------------------------------------------
+ * void stop_client_requester (void)
+ * Called when a fatal error occurs in the client requester thread. Sets the
+ * stopped variable to 1 to let other threads know they should exit. This thread
+ * does not have any resources to free on exit. Does NOT return or exit the thread;
+ * the caller is responsible for doing that after calling stop_client_requester();
+ * Parameters: none
+ * Returns: none
+ * ---------------------------------------------------------------------------*/
+void stop_client_requester(void)
+{
+  if (pthread_mutex_lock(&stop_lock) == -1)
+  {
+    perror("pthread_mutex_lock");
+  }
+  stopped = 1;
+  if (pthread_mutex_unlock(&stop_lock) == -1)
+  {
+    perror("pthread_mutex_lock");
+  }
+}
+
+/* -----------------------------------------------------------------------------
+ * void stop_client_connector (void)
+ * Called when a fatal error occurs in the client_connector thread. Frees
+ * resources and sets the stopped variable to 1 to let other threads know they
+ * should exit. Does NOT return or exit the thread; the caller is responsible
+ * for doing that after calling stop_client_requester();
+ * Parameters: none
+ * Returns: none
+ * ---------------------------------------------------------------------------*/
+void stop_client_connector(void)
+{
+  // ----------------------------------------------------------------------
+  if (pthread_mutex_lock(&stop_lock) == -1)
+  {
+    perror("pthread_mutex_lock");
+  }
+  stopped = 1;
+  if (pthread_mutex_unlock(&stop_lock) == -1)
+  {
+    perror("pthread_mutex_lock");
+  }
+  // ----------------------------------------------------------------------
+  // free the client's sockets
+  if (pthread_mutex_lock(&client_fd_lock) == -1)
+  {
+    perror("pthread_mutex_lock");
+  }
+  for (int i = 0; i < client_fd_list.size(); i++)
+  {
+    close(client_fd_list[i]);
+  }
+  if (pthread_mutex_unlock(&client_fd_lock) == -1)
+  {
+    perror("pthread_mutex_unlock");
+  }
+  // ----------------------------------------------------------------------
+}
+
 // TODO: docstring for this once it's done and we know exactly what it does
-// TODO: need to handle a case where we try to request something but we aren't
-// connected to any servers
 int client_requester (void) {
   string fileName;
   char* message;
@@ -76,13 +135,11 @@ int client_requester (void) {
     if (pthread_mutex_lock(&stop_lock) == -1)
     {
       perror("pthread_mutex_lock");
-      // TODO: do something here to handle the error
     }
     stopped = 1;
     if (pthread_mutex_unlock(&stop_lock) == -1)
     {
       perror("pthread_mutex_lock");
-      // TODO: do something here to handle the error
     }
     return 0;
     // ----------------------------------------------------------------------
@@ -109,6 +166,8 @@ int client_requester (void) {
 
   if (pthread_mutex_lock(&client_fd_lock) == -1){
     perror("pthread_mutex_lock");
+    stop_client_requester();
+    return 1;
   }
 
   //We iterate through all current active connections and send them a message
@@ -118,11 +177,15 @@ int client_requester (void) {
     sent = send(client_fd_list[i], message, sizeof(clientMessage), 0);
     if (sent == -1) {
       perror("send");
+      stop_client_requester();
+      return 1;
     }
 
     valRead = read(client_fd_list[i], rawBuffer, sizeof(serverMessage));
     if (valRead == -1){
       perror("read");
+      stop_client_requester();
+      return 1;
     }
 
     serverReturn = (struct serverMessage*)rawBuffer;
@@ -135,10 +198,9 @@ int client_requester (void) {
 
   if (pthread_mutex_unlock(&client_fd_lock) == -1){
     perror("pthread_mutex_unlock");
+    stop_client_requester();
+    return 1;
   }
-
-  // usleep(5000000);
-
 
   //============================STAGE TWO==================================
   //Iterate through the list of servers with the file, getting the file bit by
@@ -181,6 +243,26 @@ int client_requester (void) {
     printf("Pinging servers with the file you requested\n\n");
 
     while (fileSize > bytesReceived){
+      // ----------------------------------------------------------------------
+      // check if any other threads have stopped; if they have, we need to
+      // stop too
+      if (pthread_mutex_lock(&stop_lock) == -1)
+      {
+        perror("pthread_mutex_lock");
+      }
+      if (stopped == 1)
+      {
+        if (pthread_mutex_unlock(&stop_lock) == -1)
+        {
+          perror("pthread_mutex_lock");
+        }
+        return 1;
+      }
+      if (pthread_mutex_unlock(&stop_lock) == -1)
+      {
+        perror("pthread_mutex_lock");
+      }
+      // ----------------------------------------------------------------------
       //Send requests to every server with the file - we do this in "rounds" where
       //every server with the file gets one request per round
       for (int i = 0; i < serversWithFile.size(); i++){
@@ -202,6 +284,8 @@ int client_requester (void) {
         sentMessages++;
         if (sent == -1) {
           perror("send");
+          stop_client_requester();
+          return 1;
         }
       }
 
@@ -230,6 +314,8 @@ int client_requester (void) {
               valRead = recv(serversWithFile[j], rawBuffer, sizeof(serverMessage), 0);
               if (valRead == -1){
                 perror("recv");
+                stop_client_requester();
+                return 1;
               }
               if (valRead == 0) {
                 int socket = serversWithFile[j];
@@ -258,7 +344,8 @@ int client_requester (void) {
                 if (pthread_mutex_lock(&client_fd_lock) == -1)
                 {
                   perror("pthread_mutex_lock");
-                  // TODO: do something here to handle the error
+                  stop_client_requester();
+                  return 1;
                 }
                 // search the list of connected IP addresses and remove this one
                 // once we find it
@@ -277,7 +364,8 @@ int client_requester (void) {
                 if (pthread_mutex_unlock(&client_fd_lock) == -1)
                 {
                   perror("pthread_mutex_unlock");
-                  // TODO: handle the error
+                  stop_client_requester();
+                  return 1;
                 }
                 // ----------------------------------------------------------------------
                 // finally, close the socket so that it can be reused
@@ -398,13 +486,15 @@ int client_connector (void) {
   if (gethostname(hostname, 32) == -1)
   {
     perror("gethostname");
-    // TODO: handle error
+    stop_client_connector();
+    return 1;
   }
   he = gethostbyname(hostname);
   if (he == NULL)
   {
     perror("gethostbyname");
-    // TODO: handle error
+    stop_client_connector();
+    return 1;
   }
   strncpy(hostaddr, inet_ntoa(*((struct in_addr*)he->h_addr)), 16);
   while (1)
@@ -415,24 +505,22 @@ int client_connector (void) {
     if (pthread_mutex_lock(&stop_lock) == -1)
     {
       perror("pthread_mutex_lock");
-      // TODO: do something here to handle the error
+      stop_client_connector();
+      return 1;
     }
     if (stopped == 1)
     {
       if (pthread_mutex_unlock(&stop_lock) == -1)
       {
         perror("pthread_mutex_lock");
-        // TODO: do something here to handle the error
       }
       // ----------------------------------------------------------------------
       // free the client's sockets
       if (pthread_mutex_lock(&client_fd_lock) == -1)
       {
         perror("pthread_mutex_lock");
-        // TODO: do something here to handle the error
+        return 1;
       }
-      // client_fd_list.push_back(sock);
-      // connected_list.push_back(host_list[i]);
       for (int i = 0; i < client_fd_list.size(); i++)
       {
         close(client_fd_list[i]);
@@ -440,7 +528,7 @@ int client_connector (void) {
       if (pthread_mutex_unlock(&client_fd_lock) == -1)
       {
         perror("pthread_mutex_unlock");
-        // TODO: handle the error
+        return 1;
       }
       // ----------------------------------------------------------------------
       return 0;
@@ -449,7 +537,8 @@ int client_connector (void) {
     if (pthread_mutex_unlock(&stop_lock) == -1)
     {
       perror("pthread_mutex_lock");
-      // TODO: do something here to handle the error
+      stop_client_connector();
+      return 1;
     }
     // ----------------------------------------------------------------------
 
@@ -462,7 +551,8 @@ int client_connector (void) {
       if (pthread_mutex_lock(&client_fd_lock) == -1)
       {
         perror("pthread_mutex_lock");
-        // TODO: do something here to handle the error
+        stop_client_connector();
+        return 1;
       }
       if (strcmp(hostaddr, host_list[i].c_str()) != 0 && find(connected_list.begin(),
             connected_list.end(), host_list[i]) == connected_list.end())
@@ -470,7 +560,8 @@ int client_connector (void) {
         if (pthread_mutex_unlock(&client_fd_lock) == -1)
         {
           perror("pthread_mutex_unlock");
-          // TODO: handle the error
+          stop_client_connector();
+          return 1;
         }
         // ----------------------------------------------------------------------
         sock = socket(AF_INET, SOCK_STREAM, 0);
@@ -491,11 +582,15 @@ int client_connector (void) {
         if (flags = fcntl(sock, F_GETFL, NULL) < 0)
         {
           perror("fcntl");
+          stop_client_connector();
+          return 1;
         }
         flags = flags | O_NONBLOCK;
         if (fcntl(sock, F_SETFL, flags) < 0)
         {
           perror("fcntl");
+          stop_client_connector();
+          return 1;
         }
 
         int sock_closed = 0;
@@ -535,14 +630,16 @@ int client_connector (void) {
                   if (pthread_mutex_lock(&client_fd_lock) == -1)
                   {
                     perror("pthread_mutex_lock");
-                    // TODO: do something here to handle the error
+                    stop_client_connector();
+                    return 1;
                   }
                   client_fd_list.push_back(sock);
                   connected_list.push_back(host_list[i]);
                   if (pthread_mutex_unlock(&client_fd_lock) == -1)
                   {
                     perror("pthread_mutex_unlock");
-                    // TODO: handle the error
+                    stop_client_connector();
+                    return 1;
                   }
                   // ----------------------------------------------------------------------
 
@@ -574,14 +671,16 @@ int client_connector (void) {
             if (pthread_mutex_lock(&client_fd_lock) == -1)
             {
               perror("pthread_mutex_lock");
-              // TODO: do something here to handle the error
+              stop_client_connector();
+              return 1;
             }
             client_fd_list.push_back(sock);
             connected_list.push_back(host_list[i]);
             if (pthread_mutex_unlock(&client_fd_lock) == -1)
             {
               perror("pthread_mutex_unlock");
-              // TODO: handle the error
+              stop_client_connector();
+              return 1;
             }
             // ----------------------------------------------------------------------
 
@@ -595,6 +694,8 @@ int client_connector (void) {
           if (fcntl(sock, F_SETFL, flags) < 0)
           {
             perror("fcntl");
+            stop_client_connector();
+            return 1;
           }
         }
       }
@@ -604,7 +705,8 @@ int client_connector (void) {
         if (pthread_mutex_unlock(&client_fd_lock) == -1)
         {
           perror("pthread_mutex_unlock");
-          // TODO: handle the error
+          stop_client_connector();
+          return 1;
         }
         // ----------------------------------------------------------------------
       }
