@@ -22,7 +22,6 @@ void* start_server_listen(void* arg);
 void* start_server_read(void* arg);
 int server_listen(void);
 int server_read (void);
-int serverSend(char* toSend, int sendFD);
 int arrayCheck(char* toCheck, int arraySize);
 void stop_server_listener(int serverFd, int newSocket);
 void stop_server_reader(void);
@@ -45,14 +44,36 @@ struct clientMessage{
                         //when actually requesting file data this is 0, when asking if a server has a file is 1
 }clientMessage;
 
-void showBytes(byte_pointer start, size_t len){
+
+/* -----------------------------------------------------------------------------
+ * void showBytes(byte_pointer start, size_t len)
+ * A function used primarily for debugging that prints out len bytes starting
+ * from the provided start pointer. Prints bytes in hexadecimal.
+ * Parameters:
+ * - byte_pointer start: a pointer to the start of the chunk of memory we want
+ *   to print
+ * - size_t len: the number of bytes to print
+ * Returns: nothing
+ * ---------------------------------------------------------------------------*/
+void showBytes(byte_pointer start, size_t len) {
   int i;
   for (i=0; i<len; i++)
     printf(" %.2x", start[i]);
   printf("\n");
 }
 
-int arrayCheck(char* toCheck, int arraySize){
+/* -----------------------------------------------------------------------------
+ * int arrayCheck(char* toCheck, int arraySize)
+ * A function that checks whether a given array is all 0's, or if it contains
+ * some other information. Called on serverMessages that are about to be sent
+ * to the client as an error check to ensure that something hasn't gone wrong
+ * when building the message (as we should never send a message that is ALL 0's)
+ * Parameters:
+ * - char* toCheck: the array to check
+ * - int arraySize: the size of the array to check
+ * Returns: 1 if the array is not all 0's, 0 if it is
+ * ---------------------------------------------------------------------------*/
+int arrayCheck(char* toCheck, int arraySize) {
   int sum=0;
   for (int i = 0; i<arraySize; i++){
     sum = sum+toCheck[i];
@@ -154,7 +175,18 @@ void stop_server_reader(void)
   }
 }
 
-char* readFile(struct clientMessage* toRetrieve){
+/* -----------------------------------------------------------------------------
+ * char* readFile(struct clientMessage* toRetrieve)
+ * A function that, given a clientMessage, opens and reads the requested chunk
+ * of the requested file, constructs a serverMessage, and returns that message
+ * to the calling function.
+ * Parameters:
+ * - struct clientMessage* toRetrieve: a clientMessage received from a client
+ *   with information about what part of what file is being requested
+ * Returns: a serverMessage, cast to a char pointer, containing the message to
+ * send back to the client.
+ * ---------------------------------------------------------------------------*/
+char* readFile(struct clientMessage* toRetrieve) {
   std::ifstream inFile;
   char toSend[1024];
   size_t startLocation;
@@ -186,15 +218,12 @@ char* readFile(struct clientMessage* toRetrieve){
 
   //if there are less than 1024 bytes left in the file to read
   if (size - (toRetrieve->portionToReturn*1024) <= 0){
-    printf("out of range\n");
     length = 0;
     toReturn->outOfRange = 1;
   }else if (size-(toRetrieve->portionToReturn*1024) > sizeof(toSend)){
-    printf("lots left\n");
     length = sizeof(toSend);
     toReturn->outOfRange = 0;
   }else{
-    printf("sending the rest of the file\n");
     length = size-(toRetrieve->portionToReturn*1024);  //if not, just send the rest of the file
     toReturn->outOfRange = 0;
   }
@@ -217,7 +246,8 @@ char* readFile(struct clientMessage* toRetrieve){
  * to the connection and added to the global fd_set server_readfds that the reader
  * thread uses to receive client messages.
  * Parameters: none
- * Returns: nothing right now
+ * Returns: An integer indicating whether the function exited due to an error
+ * or not.
  * ---------------------------------------------------------------------------*/
 int server_listen(void) {
   int serverFd, newSocket;
@@ -240,7 +270,7 @@ int server_listen(void) {
   address.sin_port = htons(PORT);
 
   timeout.tv_sec = 0;
-  timeout.tv_usec = 20000;
+  timeout.tv_usec = 50000;
 
   if (setsockopt(serverFd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0)
   {
@@ -313,7 +343,6 @@ int server_listen(void) {
     }
 
     newSocket = accept(serverFd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
-    // printf("accepted\n");
     if (newSocket == -1)
     {
       if (errno != EWOULDBLOCK & errno != EAGAIN)
@@ -350,9 +379,7 @@ int server_listen(void) {
       stop_server_listener(serverFd, newSocket);
       return 1;
     }
-
   }
-
   return 0;
 }
 
@@ -363,7 +390,8 @@ int server_listen(void) {
  * listener function. If it receives a request from a client, determines what
  * information the client wants and sends back the correct information.
  * Parameters: none
- * Returns: nothing right now
+ * Returns: An integer that indicates whether the function exited due to
+ * an error.
  * ---------------------------------------------------------------------------*/
 int server_read (void) {
   int ready;
@@ -511,15 +539,6 @@ int server_read (void) {
       }
       // ----------------------------------------------------------------------
     }
-
   }
-
-}
-
-int serverSend(char* toSend, int sendFD){
-  struct sockaddr_in address;
-  socklen_t peerAddrLen = sizeof(address);
-//  getpeername(sendFD, &address, &peerAddrLen);
-  return 1;
 }
 # endif /* SERVER_H */
