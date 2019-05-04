@@ -298,7 +298,7 @@ int server_listen(void) {
     // necessary so that we don't hang on the accept call until we get a connection
     // continuously looping without hanging allows us to check if we should shut down
     long flags;
-    if (flags = fcntl(serverFd, F_GETFL, NULL) < 0)
+    if ((flags = fcntl(serverFd, F_GETFL, NULL)) < 0)
     {
       perror("fcntl");
       stop_server_listener(serverFd, newSocket);
