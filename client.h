@@ -267,7 +267,7 @@ int readData(long fileSize, map<int,bool> &portionCheck, string fileName, long &
         {
           if (ipstr.compare(connected_list[k]) == 0)
           {
-            printf("%s disconnected\n", ip_cstr);
+            printf("%s disconnected\n", ipstr.c_str());
             connected_list.erase(connected_list.begin()+k);
             break;
           }
