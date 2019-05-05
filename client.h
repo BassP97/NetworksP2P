@@ -506,9 +506,12 @@ int client_requester (void) {
       printf("Downloading your file!\n");
 
       while (fileSize > bytesReceived) {
-        if (filePosition % (((fileSize/1024)/10)) == 0)
+        if (fileSize > 1023)
         {
-          printf(".\n");
+          if (filePosition % (((fileSize/1024)/10)) == 0)
+          {
+            printf(".\n");
+          }
         }
         // ----------------------------------------------------------------------
         // check if any other threads have stopped; if they have, we need to
